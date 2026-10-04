@@ -1,0 +1,20 @@
+# Personal data and runtime state — never commit
+config.json
+project.json
+agenda.md
+live/
+archive/
+voice/
+cache/
+# Installed tools and downloads
+.venv/
+models/
+bin/
+*.app/
+node_modules/
+.DS_Store
+__pycache__/
+
+# Local tool logs
+.claude-flow/
+.claude/

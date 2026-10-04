@@ -1,0 +1,12 @@
+{
+  "sample": {},
+  "room": {},
+  "mcp": {
+    "servers": [
+      {
+        "server": "host:meeting-copilot",
+        "tools": ["status", "start", "stop", "transcript", "get_agenda", "set_agenda", "save_notes", "list_meetings", "read_meeting", "list_projects", "set_project", "choose_folder", "project_overview", "search_project", "read_project_file", "find_context", "index_status", "record_voice", "voice_status", "reset_meeting"]
+      }
+    ]
+  }
+}

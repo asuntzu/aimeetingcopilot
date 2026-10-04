@@ -1,0 +1,1243 @@
+<title>Meeting Copilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Schibsted+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: control-room console — top transport bar, then three live panes (transcript · copilot · ask) that collapse to tabs on phones */
+:root {
+  --bg: #ECEFF3; --panel: #FFFFFF; --sunk: #F5F7F9; --ink: #15202B; --muted: #5A6776; --line: #D6DDE5;
+  --accent: #1E5BD0; --accent-ink: #FFFFFF; --live: #D23A2A; --amber: #A86A12; --good: #2E7D4F;
+  --amber-bg: #FBF1E0; --good-bg: #E5F3EA; --accent-bg: #E6EEFB; --live-bg: #FBE6E3;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Schibsted Grotesk", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0E141B; --panel: #151E28; --sunk: #111922; --ink: #E4EAF1; --muted: #8E9BAA; --line: #253241;
+  --accent: #6C9DFF; --accent-ink: #0B1220; --live: #FF5B48; --amber: #E8B04F; --good: #5CC98A;
+  --amber-bg: #2A2112; --good-bg: #13281D; --accent-bg: #172741; --live-bg: #34160F; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0E141B; --panel: #151E28; --sunk: #111922; --ink: #E4EAF1; --muted: #8E9BAA; --line: #253241;
+  --accent: #6C9DFF; --accent-ink: #0B1220; --live: #FF5B48; --amber: #E8B04F; --good: #5CC98A;
+  --amber-bg: #2A2112; --good-bg: #13281D; --accent-bg: #172741; --live-bg: #34160F; color-scheme: dark }
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--body); }
+* { box-sizing: border-box; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { display: flex; flex-direction: column; height: 100%; padding: 12px 16px 16px; gap: 12px; max-width: 1600px; margin: 0 auto; }
+
+/* Transport bar */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+.brand { font: 700 17px/1 var(--display); letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.rec .dot { background: var(--live); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+#meetingName { flex: 1 1 200px; min-width: 0; border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 8px 10px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--sunk); border-radius: 999px; padding: 6px 12px; font-size: 13px; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.chip b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.chip.warn { background: var(--live-bg); color: var(--live); }
+.chip.linked { background: var(--accent-bg); border-color: transparent; }
+.go { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.timer { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; color: var(--muted); }
+.rec .timer { color: var(--live); }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 12px; font-weight: 500; }
+.btn:hover { background: var(--sunk); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.btn.big { padding: 10px 18px; font-size: 15px; min-width: 110px; }
+.btn.stop { background: var(--live); color: #fff; border-color: transparent; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--ink); background: var(--sunk); }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+
+.banner { border-radius: var(--r); padding: 10px 14px; background: var(--amber-bg); color: var(--ink); border: 1px solid var(--line); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.banner strong { font-weight: 600; }
+
+/* Panes */
+.tabs { display: none; gap: 6px; }
+.tabs button { flex: 1; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px; font-weight: 500; }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: transparent; }
+.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.pane > header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.pane h2 { font: 600 15px/1.2 var(--display); margin: 0; letter-spacing: -.005em; }
+.pane .sub { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
+
+/* Transcript */
+.line { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; padding: 4px 0; }
+.line time { font: 12px/1.7 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.line.new p { animation: fadein .6s ease; }
+.line p { margin: 0; overflow-wrap: anywhere; }
+.who { font: 600 12px var(--body); margin-right: 6px; padding: 1px 7px; border-radius: 999px; background: var(--sunk); color: var(--muted); }
+.who.host { background: var(--accent-bg); color: var(--accent); }
+.who.call { background: var(--good-bg); color: var(--good); }
+.who.guest { background: var(--amber-bg); color: var(--amber); }
+.line.mark p { color: var(--amber); font-weight: 600; }
+@keyframes fadein { from { background: var(--accent-bg); } }
+.empty { color: var(--muted); padding: 24px 8px; text-align: center; text-wrap: balance; }
+.empty strong { display: block; color: var(--ink); font: 600 16px var(--display); margin-bottom: 4px; }
+
+/* Copilot */
+.nudge { margin: 0 0 14px; padding: 12px 14px; border-radius: 8px; background: var(--accent-bg); }
+.nudge .label { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.nudge p { margin: 4px 0 0; font: 600 16px/1.35 var(--display); text-wrap: balance; }
+.topic { font: 600 13px var(--body); color: var(--muted); margin: 0 0 12px; }
+.topic span { color: var(--ink); }
+.sec { margin: 0 0 16px; }
+.sec h3 { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; display: flex; align-items: center; gap: 6px; }
+.sec ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.sec li { padding: 7px 10px; border-radius: 6px; background: var(--sunk); overflow-wrap: anywhere; }
+.sec.q li { background: var(--amber-bg); }
+.sec.a li, .sec.d li { background: var(--good-bg); }
+.sec.f li { background: var(--accent-bg); }
+.sec li small { display: block; color: var(--muted); font: 11px var(--mono); margin-top: 2px; overflow-wrap: anywhere; }
+.sec li.fresh { box-shadow: inset 3px 0 0 var(--accent); }
+.ctx { margin: 0 0 16px; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); }
+.ctx h3 { font: 600 14px var(--display); margin: 0 0 8px; color: var(--accent); }
+.ctx ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.ctx li { padding-left: 12px; border-left: 2px solid var(--accent); overflow-wrap: anywhere; }
+.ctx li.fresh { border-left-color: var(--amber); }
+.ctx li small { display: block; color: var(--muted); font: 11px var(--mono); margin-top: 2px; overflow-wrap: anywhere; }
+.ctx.past { margin: 8px 0 0; }
+.ctx.past h3 { color: var(--ink); font-size: 13px; }
+.earlier summary { cursor: pointer; color: var(--muted); font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 4px 0; }
+.state { font: 500 11px var(--mono); letter-spacing: .04em; padding: 3px 8px; border-radius: 999px; background: var(--sunk); color: var(--muted); }
+.state.busy { color: var(--accent); background: var(--accent-bg); }
+.state.err { color: var(--live); background: var(--live-bg); }
+.switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.switch input { accent-color: var(--accent); }
+
+/* Ask */
+.chat { display: grid; gap: 10px; }
+.msg { padding: 8px 12px; border-radius: 8px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.msg.me { background: var(--ink); color: var(--bg); justify-self: end; max-width: 90%; }
+.msg.ai { background: var(--sunk); }
+.msg.ai .tool { color: var(--muted); font: 11px var(--mono); }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+.quick button { border: 1px solid var(--line); background: var(--sunk); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+.quick button:hover { border-color: var(--accent); }
+.composer { display: flex; gap: 8px; padding: 10px 14px 14px; }
+.composer textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 8px 10px; height: 42px; }
+
+/* Drawer + modal */
+.veil { position: fixed; inset: 0; background: rgb(8 12 18 / .45); display: flex; justify-content: flex-end; z-index: 10; }
+.veil[hidden] { display: none !important; }
+.drawer { background: var(--panel); width: min(520px, 100%); height: 100%; display: flex; flex-direction: column; border-left: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.drawer > header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+.drawer h2 { margin: 0; font: 700 18px var(--display); }
+.drawer .body { flex: 1; overflow-y: auto; padding: 16px; display: grid; gap: 18px; align-content: start; }
+.field label, .field .lbl { display: block; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.field textarea, .field input[type=text], .field input[type=search] { width: 100%; border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 8px 10px; }
+.field textarea { min-height: 120px; resize: vertical; }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.plist { max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.plist label { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.plist .grp { position: sticky; top: 0; background: var(--panel); font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 8px 10px 4px; border-bottom: 1px solid var(--line); }
+.plist .grp-empty { color: var(--muted); padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--line); }
+.plist label:last-child { border-bottom: 0; }
+.plist label:hover { background: var(--sunk); }
+.plist small { color: var(--muted); font: 11px var(--mono); overflow-wrap: anywhere; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.readme { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 8px; background: var(--accent-bg); }
+.readme p { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+.readme blockquote { margin: 0 0 10px; font: 500 16px/1.55 var(--body); color: var(--ink); }
+.hist button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 8px 10px; }
+.hist button:hover { background: var(--sunk); }
+.hist small { color: var(--muted); font: 11px var(--mono); }
+.modal { background: var(--panel); margin: auto; width: min(760px, calc(100% - 32px)); max-height: calc(100% - 48px); display: flex; flex-direction: column; border-radius: var(--r); border: 1px solid var(--line); }
+.modal > header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.modal h2 { margin: 0 auto 0 0; font: 700 18px var(--display); }
+.modal pre { margin: 0; padding: 16px; overflow: auto; white-space: pre-wrap; font: 13px/1.6 var(--body); flex: 1; }
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; z-index: 20; max-width: calc(100% - 32px); }
+
+/* Phone companion */
+.comp { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px calc(96px + env(safe-area-inset-bottom, 0px)); max-width: 640px; margin: 0 auto; font-size: 16px; }
+.comp[hidden], .app[hidden], .c-ask[hidden], .banner[hidden], [hidden] { display: none !important; }
+.c-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.c-head .brand { font-size: 18px; }
+.c-meta { color: var(--muted); font-size: 13px; width: 100%; overflow-wrap: anywhere; }
+.c-meta b { color: var(--ink); font-weight: 600; }
+.c-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.c-controls .btn { padding: 12px; font-size: 16px; }
+.c-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
+.c-card h3 { margin: 0 0 8px; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.c-say p { margin: 0; font: 600 21px/1.3 var(--display); text-wrap: balance; }
+.c-say { background: var(--accent-bg); border-color: transparent; }
+.c-say h3 { color: var(--accent); }
+.c-card ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.c-card li { overflow-wrap: anywhere; }
+.c-card li small { display: block; color: var(--muted); font: 11px var(--mono); margin-top: 2px; }
+.c-ctx li { padding-left: 10px; border-left: 2px solid var(--accent); }
+.c-q li { padding: 8px 10px; border-radius: 6px; background: var(--amber-bg); }
+.c-lines .line { grid-template-columns: 58px minmax(0, 1fr); font-size: 14px; }
+.c-ask { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; z-index: 5; }
+.c-ask input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 12px; font-size: 16px; }
+.c-answer p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.c-answer .q { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.c-wait { text-align: center; padding: 32px 12px; color: var(--muted); }
+.c-wait strong { display: block; color: var(--ink); font: 600 18px var(--display); margin-bottom: 6px; }
+.c-alert { position: fixed; top: calc(8px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px; z-index: 30; background: var(--ink); color: var(--bg); border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25); transform: translateY(-140%); transition: transform .3s ease; }
+.c-alert.show { transform: translateY(0); }
+.c-alert small { display: block; opacity: .75; font: 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.c-folder { width: 100%; border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 10px; font-size: 15px; }
+.c-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.c-link .dot { width: 8px; height: 8px; }
+.c-link.on .dot { background: var(--good); }
+@media (max-width: 900px) {
+  .tabs { display: flex; }
+  .panes { grid-template-columns: minmax(0, 1fr); }
+  .pane:not(.on) { display: none; }
+  .go { margin-left: 0; width: 100%; justify-content: space-between; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+
+<div class="app" id="app">
+  <div class="bar" id="bar">
+    <div class="brand"><span class="dot"></span>Meeting Copilot</div>
+    <input id="meetingName" type="text" placeholder="Meeting name, e.g. Acme pricing call" aria-label="Meeting name">
+    <button class="chip" id="projectChip" title="Choose the folder of documents for this meeting"><span>File</span><b id="projectName">Choose…</b></button>
+    <button class="btn sm" id="newBtn" title="Clear everything and start a new meeting">New meeting</button>
+    <button class="btn ghost sm" id="setupBtn">Setup</button>
+    <button class="btn ghost sm" id="historyBtn">Past meetings</button>
+    <div class="go">
+      <span class="chip" id="audioChip" hidden></span>
+      <span class="timer" id="timer">00:00</span>
+      <button class="btn ghost sm" id="markBtn" title="Flag this moment (M)" disabled>Mark</button>
+      <button class="btn big primary" id="startBtn">Start</button>
+    </div>
+  </div>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" data-pane="tPane" aria-selected="false">Transcript</button>
+    <button role="tab" data-pane="cPane" aria-selected="true">Copilot</button>
+    <button role="tab" data-pane="aPane" aria-selected="false">Ask</button>
+  </div>
+
+  <div class="panes">
+    <section class="pane" id="tPane">
+      <header><h2>Transcript</h2><span class="sub" id="lineCount">0 lines</span></header>
+      <div class="scroll" id="transcript"></div>
+    </section>
+
+    <section class="pane on" id="cPane">
+      <header>
+        <h2>Copilot</h2>
+        <span class="state" id="aiState">Idle</span>
+        <span class="sub" style="display:flex;gap:10px;align-items:center">
+          <label class="switch"><input type="checkbox" id="autoToggle" checked> Live notes</label>
+          <button class="btn sm" id="refreshBtn">Refresh</button>
+        </span>
+      </header>
+      <div class="scroll" id="insights"></div>
+      <div class="composer" style="border-top:1px solid var(--line);padding-top:10px">
+        <button class="btn primary" id="wrapBtn" style="flex:1">Wrap up meeting</button>
+      </div>
+    </section>
+
+    <section class="pane" id="aPane">
+      <header><h2>Ask</h2><span class="sub" id="askScope">Transcript + project</span></header>
+      <div class="scroll"><div class="chat" id="chat"></div></div>
+      <div class="quick" id="quick">
+        <button data-q="What should I ask next, given what was just said?">What should I ask next?</button>
+        <button data-q="Fact-check the last few minutes against my files. Flag anything that contradicts them.">Fact-check</button>
+        <button data-q="What do my files say about the company or person being discussed right now?">What do we know?</button>
+        <button data-q="Summarize the last 5 minutes in 3 bullets.">Last 5 min</button>
+      </div>
+      <div class="composer">
+        <textarea id="askInput" placeholder="Ask about the meeting or your files…" aria-label="Ask a question"></textarea>
+        <button class="btn primary" id="askBtn">Ask</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Phone companion -->
+<div class="comp" id="comp" hidden>
+  <div class="c-head">
+    <div class="brand"><span class="dot" id="cDot"></span>Meeting Copilot</div>
+    <span class="c-link" id="cLink"><span class="dot"></span><span id="cLinkText">Looking for your computer…</span></span>
+    <span class="timer" id="cTimer" style="margin-left:auto">00:00</span>
+    <div class="c-meta" id="cMeta">Open Meeting Copilot on your computer in the Claude app. This phone shows its live notes.</div>
+  </div>
+  <div class="c-controls">
+    <button class="btn" id="cMark" disabled>Mark moment</button>
+    <button class="btn primary" id="cStart" disabled>Start</button>
+  </div>
+  <label class="switch" style="font-size:14px"><input type="checkbox" id="cWake"> Keep this screen on</label>
+  <div id="cBody"><div class="c-wait"><strong>Waiting for your computer</strong>Open Meeting Copilot in the Claude app on your computer. Live notes appear here once it's open.</div></div>
+  <div class="c-card" id="cFolderCard" hidden>
+    <h3>Meeting folder</h3>
+    <select class="c-folder" id="cFolder" aria-label="Meeting folder"></select>
+  </div>
+</div>
+<div class="c-ask" id="cAsk" hidden>
+  <input id="cAskInput" type="text" placeholder="Ask about the meeting or your files…" aria-label="Ask a question" enterkeyhint="send">
+  <button class="btn primary" id="cAskBtn">Ask</button>
+</div>
+<div class="c-alert" id="cAlert" role="status"><small id="cAlertKind">New</small><span id="cAlertText"></span></div>
+
+<!-- Setup drawer -->
+<div class="veil" id="setupVeil" hidden>
+  <aside class="drawer" role="dialog" aria-label="Meeting setup">
+    <header><h2>Meeting setup</h2><button class="btn ghost sm" data-close style="margin-left:auto">Close</button></header>
+    <div class="body">
+      <div class="field">
+        <span class="lbl">Files for this meeting</span>
+        <div class="row" style="margin-bottom:8px"><button class="btn primary" id="chooseBtn">Choose folder…</button><span class="hint" style="margin:0">Opens the folder picker on your Desktop.</span></div>
+        <input type="search" id="projectFilter" placeholder="Filter folders…" aria-label="Filter project folders">
+        <div class="plist" id="projectList" style="margin-top:8px"><div class="empty">Loading folders…</div></div>
+        <div class="row" style="margin-top:8px">
+          <input type="text" id="customPath" placeholder="Or paste a folder path, e.g. ~/Desktop/Meetings/Acme kickoff" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:8px 10px" aria-label="Custom folder path">
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="linkBtn">Use ticked folders</button>
+          <button class="btn" id="unlinkBtn">Unlink</button>
+        </div>
+        <p class="hint">The copilot searches these folders (notes, code, PDFs, Word docs) for facts relevant to what's being said. Files stay on your computer.</p>
+      </div>
+      <div class="field">
+        <label for="agenda">Agenda and context</label>
+        <textarea id="agenda" placeholder="Who's on the call, what you want out of it, sensitive points to avoid…"></textarea>
+        <div class="row" style="margin-top:8px"><button class="btn" id="saveAgendaBtn">Save agenda</button></div>
+      </div>
+      <div class="field">
+        <span class="lbl">Your voice</span>
+        <p class="hint" id="voiceState" style="margin:0 0 8px">Checking…</p>
+        <div id="voiceRead" class="readme" hidden>
+          <p>Read this aloud at your normal speaking volume:</p>
+          <blockquote>Thanks for joining today. I'd like to walk through where things stand, what we need from each other, and the timeline we're working toward. Before we get into numbers, tell me what a good outcome looks like on your side. I'll take notes as we go, and at the end I'll send everyone a short summary with the next steps and who owns them. If anything I say doesn't match what you have, stop me and we'll sort it out right there.</blockquote>
+          <div class="row"><span class="timer" id="voiceTimer">30</span><span class="hint" style="margin:0">seconds left</span></div>
+        </div>
+        <div class="row"><button class="btn" id="voiceBtn">Record my voice (30 s)</button></div>
+        <p class="hint">The transcript uses this to label your lines with your name and to ignore the call echoing through your speakers. Only a voiceprint is saved, never the recording.</p>
+      </div>
+      <div class="field">
+        <span class="lbl">Transcription</span>
+        <div class="row">
+          <label for="chunk" style="margin:0;text-transform:none;letter-spacing:0;font:14px var(--body);color:var(--ink)">Update every</label>
+          <select id="chunk" style="border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:6px 8px">
+            <option value="15">15 s (faster, rougher)</option>
+            <option value="20" selected>20 s</option>
+            <option value="30">30 s (most accurate)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- History drawer -->
+<div class="veil" id="historyVeil" hidden>
+  <aside class="drawer" role="dialog" aria-label="Past meetings">
+    <header><h2>Past meetings</h2><button class="btn ghost sm" data-close style="margin-left:auto">Close</button></header>
+    <div class="body"><div class="hist plist" id="histList" style="max-height:none"></div></div>
+  </aside>
+</div>
+
+<!-- Document modal -->
+<div class="veil" id="docVeil" hidden style="justify-content:center">
+  <div class="modal" role="dialog" aria-labelledby="docTitle">
+    <header>
+      <h2 id="docTitle">Summary</h2>
+      <button class="btn sm" id="docCopy">Copy</button>
+      <button class="btn sm primary" id="docSave">Save to folder</button>
+      <button class="btn ghost sm" data-close>Close</button>
+    </header>
+    <pre id="docBody"></pre>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const SERVER = "host:meeting-copilot";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("mc:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("mc:" + k, JSON.stringify(v)); } catch {} },
+};
+const hostName = () => S.status?.hostName || "Me";
+const micHelp = () => S.status?.platform === "windows"
+  ? "Open Windows Settings → Privacy &amp; security → Microphone and turn on <b>Let desktop apps access your microphone</b>."
+  : "Open System Settings → Privacy &amp; Security → Microphone and turn on <b>AI Meeting Copilot Recorder</b>.";
+const emptyInsights = () => ({ topic: "", nudge: "", context: { title: "", points: [] }, notes: [], questions: [], actions: [], decisions: [], searchTerms: [] });
+
+const S = {
+  gen: 0, wrapped: false,
+  mcp: null, sample: null, status: null, lines: [], marks: [],
+  insights: emptyInsights(), contextLog: store.get("contextLog", []), freshKeys: new Set(), analyzedTo: 0, lastAnalyzeAt: 0, busy: false,
+  auto: store.get("auto", true), pausedUntil: 0, aiOff: false,
+  project: { name: "", paths: [] }, overview: "", agenda: "", chat: [], askCtl: null, doc: null,
+};
+
+// ---------- MCP plumbing ----------
+async function call(tool, input = {}) {
+  if (!S.mcp) throw { code: "no_mcp" };
+  const r = await S.mcp.callTool(SERVER, tool, input, { cache: false });
+  return r.payload;
+}
+function explain(e) {
+  switch (e?.code) {
+    case "no_mcp": case "not_granted": case "capability_disabled": case "capability_removed":
+      return "This page needs the Claude desktop app to reach your computer. Open it from Artifacts in the Claude app.";
+    case "server_not_connected":
+      return "Can't reach the Meeting Copilot helper on your computer. Open this page in the Claude desktop app; if it's already open there, quit and reopen Claude so it loads the helper.";
+    case "not_in_manifest": return "Access to the Meeting Copilot helper is turned off for this page. Turn it on from the page's Permissions menu.";
+    case "cancelled": return "Cancelled in the Claude app.";
+    case "tool_error": return e.message || "The helper reported an error.";
+    case "server_unavailable": return "The helper didn't answer in time. Try again.";
+    default: return e?.message || "Something went wrong talking to the helper.";
+  }
+}
+function showBanner(html, actions = "") {
+  const b = $("banner");
+  if (!html) { b.hidden = true; return; }
+  b.innerHTML = `<span>${html}</span>${actions}`;
+  b.hidden = false;
+}
+let toastT;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 3500); }
+
+// ---------- Recording ----------
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : String(m).padStart(2, "0")) + ":" + String(x).padStart(2, "0");
+}
+function renderBar() {
+  Link.dirty();
+  const st = S.status || {};
+  const on = !!st.listening;
+  $("bar").classList.toggle("rec", on);
+  const b = $("startBtn");
+  b.textContent = on ? "Stop" : "Start";
+  b.className = "btn big " + (on ? "stop" : "primary");
+  b.disabled = !S.mcp;
+  $("markBtn").disabled = !on;
+  $("meetingName").disabled = on;
+  const a = $("audioChip");
+  if (on) {
+    a.hidden = false;
+    const src = st.meetingAudio ? "Mic + call audio" : "Mic only";
+    const lvl = st.level == null ? "" : st.micBlocked ? " · silent" : st.level > -45 ? " · hearing audio" : " · quiet";
+    a.textContent = src + lvl;
+    a.classList.toggle("warn", !!st.micBlocked);
+    a.title = st.meetingAudio ? `Your mic is labeled ${hostName()}; Zoom/Meet audio is labeled Call.` : (st.platform === "windows" ? "Call audio isn't being captured. Check that your speakers or headset are the default playback device." : "Call audio isn't being captured. Allow System Audio Recording for AI Meeting Copilot Recorder.");
+    if (!st.meetingAudio && st.callAudioNote !== null && !S.callWarned) { S.callWarned = true; showBanner("<strong>Only your microphone is being captured.</strong> To hear the other people on a Zoom or Meet call, " + (st.platform === "windows" ? "make sure your speakers or headset are the default playback device in Windows Sound settings, then press Stop and Start." : "open System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording, turn on <b>AI Meeting Copilot Recorder</b> under System Audio Recording Only, then press Stop and Start.")); }
+  } else a.hidden = true;
+  if (on && st.micBlocked) showBanner("<strong>Your microphone is sending silence.</strong> " + micHelp() + " Then press Stop and Start.");
+  if (!on) $("timer").textContent = st.startedAt && S.lines.length ? "Ended" : "00:00";
+  $("projectName").textContent = S.project.paths.length ? (S.project.name || "Chosen") : "Choose…";
+  $("projectChip").classList.toggle("linked", !!S.project.paths.length);
+  $("askScope").textContent = S.project.paths.length ? "Transcript + " + (S.project.name || "your files") : "Transcript only";
+}
+setInterval(() => {
+  if (S.status?.listening && S.status.startedAt) $("timer").textContent = fmtElapsed(Date.now() - Date.parse(S.status.startedAt));
+}, 1000);
+
+async function refreshStatus() {
+  S.status = await call("status");
+  renderBar();
+}
+
+async function toggleRecording() {
+  const b = $("startBtn");
+  b.disabled = true;
+  try {
+    if (S.status?.listening) {
+      b.textContent = "Stopping…";
+      const res = await call("stop");
+      S.status = res;
+      await pullTranscript();
+      toast(res.saved ? "Stopped. Transcript saved to " + shortPath(res.saved) : "Stopped.");
+      maybeAnalyze(true);
+    } else {
+      const name = $("meetingName").value.trim() || "Meeting";
+      $("meetingName").value = name;
+      b.textContent = "Starting…";
+      S.wrapped = false; S.lines = []; S.marks = []; S.insights = emptyInsights(); S.contextLog = []; store.set("contextLog", []); S.analyzedTo = 0; S.chat = [];
+      renderTranscript(); renderInsights(); renderChat();
+      S.status = await call("start", { name, chunkSeconds: Number($("chunk").value) });
+      for (let i = 0; i < 30 && !S.status.listening && !S.status.error; i++) {
+        showBanner(S.status?.platform === "windows" ? "<strong>Starting the recorder…</strong>" : "<strong>Waiting for microphone permission.</strong> If macOS asks whether <b>AI Meeting Copilot Recorder</b> can use the microphone, click Allow.");
+        renderBar(); b.disabled = true; b.textContent = "Waiting…";
+        await new Promise((r) => setTimeout(r, 2000));
+        S.status = await call("status");
+      }
+      if (!S.status.listening) showBanner("<strong>Recording didn't start.</strong> " + (S.status.error ? esc(S.status.error) : micHelp() + " Then press Start again."));
+      else { showBanner(""); toast("Listening. First lines appear in about " + $("chunk").value + " seconds."); }
+    }
+  } catch (e) { toast(explain(e)); }
+  renderBar();
+}
+
+async function pullTranscript() {
+  const r = await call("transcript", { since: S.lines.length });
+  if (r.since === S.lines.length && r.lines.length) {
+    const start = S.lines.length;
+    S.lines.push(...r.lines);
+    renderTranscript(start);
+  } else if (r.total < S.lines.length) { S.lines = []; await pullTranscript(); return; }
+  if (S.status && S.status.listening !== r.listening) { S.status.listening = r.listening; renderBar(); if (!r.listening) refreshStatus().catch(() => {}); }
+}
+
+let polling = false;
+setInterval(async () => {
+  if (polling || !S.mcp || !S.status?.listening) return;
+  polling = true;
+  try { S.status = await call("status"); renderBar(); await pullTranscript(); maybeAnalyze(); } catch (e) { if (e?.code === "server_not_connected") showBanner(explain(e)); }
+  polling = false;
+}, 6000);
+
+function markMoment() {
+  if (!S.status?.listening) return;
+  const t = new Date().toTimeString().slice(0, 8);
+  S.marks.push({ t, text: "★ Marked moment" });
+  renderTranscript();
+  toast("Moment marked at " + t);
+}
+
+// ---------- Transcript ----------
+function renderTranscript(newFrom = Infinity) {
+  Link.dirty();
+  const el = $("transcript");
+  const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  $("lineCount").textContent = S.lines.length + (S.lines.length === 1 ? " line" : " lines");
+  if (!S.lines.length && !S.marks.length) {
+    el.innerHTML = S.status?.listening
+      ? `<div class="empty"><strong>Listening…</strong>The first lines arrive after the first chunk is transcribed.</div>`
+      : `<div class="empty"><strong>No transcript yet</strong>Name the meeting, choose a File, then press Start. Speech is transcribed on your computer every few seconds.</div>`;
+    return;
+  }
+  const items = S.lines.map((l, i) => ({ ...l, i })).concat(S.marks.map((m) => ({ ...m, mark: true })));
+  items.sort((a, b) => a.t.localeCompare(b.t) || (a.mark ? 1 : -1));
+  el.innerHTML = items.map((l) => {
+    const m = !l.mark && l.text.match(/^([^:]{1,30}): (.*)$/);
+    const who = m ? m[1] : "", text = m ? m[2] : l.text;
+    const cls = who === hostName() ? "host" : who === "Call" ? "call" : who ? "guest" : "";
+    return `<div class="line${l.mark ? " mark" : ""}${l.i >= newFrom ? " new" : ""}"><time>${esc(l.t)}</time><p>${who ? `<b class="who ${cls}">${esc(who)}</b>` : ""}${esc(text)}</p></div>`;
+  }).join("");
+  if (nearBottom || newFrom === 0) el.scrollTop = el.scrollHeight;
+}
+
+// ---------- Project ----------
+async function loadProject() {
+  const r = await call("list_projects");
+  S.project = r.current || { name: "", paths: [] };
+  S.projectList = r.projects || [];
+  renderBar();
+  renderProjectList();
+  if (S.project.paths.length) loadOverview().catch(() => {});
+}
+async function loadOverview() {
+  const o = await call("project_overview");
+  const parts = [];
+  for (const r of o.roots || []) {
+    parts.push(`Folder: ${r.root} (${r.files.length}${r.files.length >= 250 ? "+" : ""} files)`);
+    parts.push("Files: " + r.files.slice(0, 80).join(" | "));
+    for (const d of r.docs) parts.push(`--- ${d.file} ---\n${d.text}`);
+  }
+  S.overview = parts.join("\n").slice(0, 9000);
+}
+function renderProjectList() {
+  const f = $("projectFilter").value.trim().toLowerCase();
+  const linked = new Set(S.project.paths);
+  const list = (S.projectList || []).filter((p) => !f || p.name.toLowerCase().includes(f) || p.path.toLowerCase().includes(f));
+  const extra = S.project.paths.filter((p) => !(S.projectList || []).some((x) => x.path === p)).map((p) => ({ name: p.split("/").pop(), path: p, where: "linked" }));
+  const row = (p) => `<label><input type="checkbox" value="${esc(p.path)}" ${linked.has(p.path) ? "checked" : ""}><span>${esc(p.name)}<small>${esc(p.path.replace(/^\/Users\/[^/]+/, "~"))}</small></span></label>`;
+  const claudeP = list.filter((p) => p.group === "claude"), folders = extra.concat(list.filter((p) => p.group !== "claude"));
+  $("projectList").innerHTML =
+    (claudeP.length ? `<div class="grp">Claude projects</div>` + claudeP.map(row).join("") : "") +
+    `<div class="grp">Folders on this computer</div>` +
+    (folders.length ? folders.map(row).join("") : `<div class="grp-empty">No folders match.</div>`);
+}
+async function linkProject(paths) {
+  const custom = $("customPath").value.trim();
+  if (custom) paths = [...paths, custom];
+  const name = paths.length ? (paths.length === 1 ? paths[0].replace(/\/$/, "").split("/").pop() : paths.map((p) => p.replace(/\/$/, "").split("/").pop()).join(" + ")) : "";
+  try {
+    S.project = await call("set_project", { name, paths });
+    $("customPath").value = "";
+    S.overview = "";
+    renderBar(); renderProjectList();
+    if (S.project.paths.length) { toast("Using " + S.project.name); await loadOverview(); } else toast("No File selected");
+  } catch (e) { toast(explain(e)); }
+}
+
+async function chooseFolder() {
+  const chip = $("projectChip");
+  chip.disabled = true;
+  $("projectName").textContent = "Picking…";
+  toast("Choose a folder in the window that opened. It may be behind this one.");
+  try {
+    const r = await call("choose_folder");
+    if (!r.cancelled) {
+      S.project = { name: r.name, paths: r.paths };
+      S.overview = "";
+      renderProjectList();
+      toast("Using " + r.name);
+      loadOverview().catch(() => {});
+    }
+  } catch (e) { toast(explain(e)); }
+  chip.disabled = false;
+  renderBar();
+  watchIndex();
+}
+// Show "reading 3/12" on the File chip while the helper reads the folder's documents
+let indexWatch = 0;
+async function watchIndex() {
+  if (!S.project.paths.length) return;
+  const run = ++indexWatch;
+  for (let i = 0; i < 300 && run === indexWatch; i++) {
+    let st;
+    try { st = await call("index_status"); } catch { break; }
+    if (!st.building) { renderBar(); if (i) toast(`Read ${st.total} document${st.total === 1 ? "" : "s"} in ${S.project.name}`); break; }
+    $("projectName").textContent = `${S.project.name} · reading ${st.done}/${st.total}`;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}
+
+// ---------- Copilot (live notes) ----------
+const projectTools = () => !S.project.paths.length ? undefined : [
+  {
+    name: "find_context",
+    description: "Best first step. Returns the passages from the meeting folder's documents most relevant to a free-text query (topic, names, terms), each with its source file.",
+    inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    async execute({ query }) {
+      const r = await call("find_context", { query: String(query || ""), k: 8 });
+      return JSON.stringify(r.passages.map(({ source, text }) => ({ source, text }))).slice(0, 14000);
+    },
+  },
+  {
+    name: "search_project",
+    description: "Search the linked project's files (notes, code, PDFs, Word docs) for an exact word or short phrase, case-insensitive. Returns matching lines with file paths, plus documents whose content matches. Use names, company names, numbers or specific terms.",
+    inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    async execute({ query }) {
+      const r = await call("search_project", { query: String(query || "") });
+      return JSON.stringify({ matches: r.matches.slice(0, 25), documents: r.documents.slice(0, 12) }).slice(0, 14000);
+    },
+  },
+  {
+    name: "read_project_file",
+    description: "Read the text of one file from the linked project (absolute path from search results). Returns up to maxChars characters (default 6000).",
+    inputSchema: { type: "object", properties: { path: { type: "string" }, maxChars: { type: "number" } }, required: ["path"] },
+    async execute({ path, maxChars }) {
+      const r = await call("read_project_file", { path: String(path || ""), maxChars: Math.min(12000, Number(maxChars) || 6000) });
+      return JSON.stringify(r).slice(0, 14000);
+    },
+  },
+];
+
+function context(maxLines = 120) {
+  const t = S.lines.slice(-maxLines).map((l) => `[${l.t}] ${l.text}`).join("\n");
+  const marks = S.marks.map((m) => `[${m.t}] (user flagged this moment)`).join("\n");
+  return [
+    `MEETING: ${$("meetingName").value || "Untitled"}`,
+    `SPEAKER LABELS: "${hostName()}" is the user (the host, who you are helping). "Call" is the other people on a Zoom/Meet call. "Guest" is another person in the room. Unlabeled lines are unknown speakers.`,
+    S.agenda.trim() ? `AGENDA / CONTEXT FROM THE USER:\n${S.agenda.trim().slice(0, 4000)}` : "",
+    S.project.paths.length ? `LINKED PROJECT: ${S.project.name}\n${S.overview || "(overview not loaded)"}` : "No project is linked.",
+    `TRANSCRIPT (auto-transcribed, no speaker labels, may contain errors)${S.lines.length > maxLines ? ` — last ${maxLines} lines` : ""}:\n${t || "(nothing yet)"}`,
+    marks ? `FLAGGED MOMENTS:\n${marks}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function maybeAnalyze(force = false) {
+  if (!S.sample || S.aiOff || S.busy || Date.now() < S.pausedUntil) return;
+  if (!force && !S.auto) return;
+  const fresh = S.lines.length - S.analyzedTo;
+  if (fresh <= 0) return;
+  if (force || fresh >= 3 || Date.now() - S.lastAnalyzeAt > 50000) analyze();
+}
+
+async function analyze() {
+  if (!S.sample || S.busy) return;
+  S.busy = true;
+  const gen = S.gen;
+  const upTo = S.lines.length;
+  setAiState("Updating…", "busy");
+  const prev = S.insights;
+  const newLines = S.lines.slice(S.analyzedTo, upTo).map((l) => `[${l.t}] ${l.text}`).join("\n");
+  const hasFiles = !!S.project.paths.length;
+  let passages = [];
+  if (hasFiles) {
+    const recent = S.lines.slice(Math.max(0, upTo - 6), upTo).map((l) => l.text).join(" ");
+    try {
+      const r = await call("find_context", { query: [prev.topic, ...prev.searchTerms, recent].join(" "), k: 8 });
+      passages = r.passages || [];
+      if (r.indexing) setAiState(`Reading files ${r.indexing.done}/${r.indexing.total}`, "busy");
+    } catch {}
+  }
+  const excerpts = passages.map((p, n) => `[${n + 1}] ${p.source}\n${p.text}`).join("\n\n");
+  const prompt = `You are a live meeting copilot quietly helping the user (the person who owns this page) during a call. They glance at your output between sentences, so be brief and specific.
+
+${context(80)}
+
+NEW SINCE YOUR LAST UPDATE:
+${newLines || "(none)"}
+
+YOUR PREVIOUS STATE (JSON):
+${JSON.stringify(prev)}
+
+${hasFiles ? `DOCUMENT EXCERPTS from the user's meeting folder, retrieved for what is being discussed now:
+${excerpts || "(no relevant passages found)"}
+
+Be proactive with "context": brief the user on what their documents say that bears on the CURRENT discussion, before they ask. Useful context: background on the people or companies mentioned, prior figures, prices, dates and terms, past commitments or history, how this connects to the user's goals, risks, and anything that contradicts what was just said (say so plainly). Use only the excerpts above or still-relevant previous context; cite the file name in "source". If nothing in the excerpts is relevant, return the previous context if it still applies, else empty points.` : `No meeting folder is chosen, so leave "context" points empty.`}
+
+Reply with ONLY a JSON object of this shape, updating the previous state:
+{"topic": "what is being discussed right now, max 10 words",
+ "nudge": "the single most useful thing for the user to say or ask right now, max 22 words, or empty string",
+ "context": {"title": "what this background is about, max 6 words", "points": [{"text": "one piece of context from the documents, max 30 words", "source": "file name"}]},
+ "questions": ["sharp questions the user could raise about the current topic; max 4"],
+ "actions": [{"who": "", "what": "", "when": ""}],
+ "decisions": ["decisions made"],
+ "notes": ["key points, numbers, names so far; max 8, newest last, each under 20 words"],
+ "searchTerms": ["3-6 names, companies, products, numbers or terms worth looking up in the user's documents next"]}
+Rules: 2-5 context points; keep still-relevant items, drop stale questions, never drop actions or decisions. The transcript has transcription errors; infer obvious mishearings and mark uncertain names or numbers with (?).`;
+  try {
+    const r = await S.sample.json(prompt, { modelTier: "quick", cache: false });
+    if (gen !== S.gen) return;
+    if (r && typeof r === "object") {
+      const before = new Set(keysOf(prev));
+      const next = normalize(r);
+      const old = prev.context;
+      if (old.points.length && old.title.toLowerCase() !== next.context.title.toLowerCase()) {
+        S.contextLog = [old, ...S.contextLog.filter((c) => c.title.toLowerCase() !== old.title.toLowerCase())].slice(0, 8);
+        store.set("contextLog", S.contextLog);
+      }
+      S.insights = next;
+      S.freshKeys = new Set(keysOf(S.insights).filter((k) => !before.has(k)));
+      S.analyzedTo = upTo;
+      store.set("insights", S.insights);
+    }
+    setAiState("Updated " + new Date().toTimeString().slice(0, 5));
+  } catch (e) {
+    handleSampleError(e);
+  } finally {
+    S.lastAnalyzeAt = Date.now();
+    S.busy = false;
+    renderInsights();
+  }
+}
+const arr = (x) => (Array.isArray(x) ? x : []);
+function normalize(r) {
+  const ctx = r.context && typeof r.context === "object" ? r.context : {};
+  let points = arr(ctx.points).map((p) => (typeof p === "string" ? { text: p, source: "" } : { text: String(p.text || ""), source: String(p.source || "") })).filter((p) => p.text);
+  if (!points.length) points = arr(r.facts).map((f) => ({ text: String(f.fact || f), source: String(f.source || "") })).filter((p) => p.text && p.text !== "[object Object]");
+  return {
+    topic: String(r.topic || ""), nudge: String(r.nudge || ""),
+    context: { title: String(ctx.title || r.topic || ""), points: points.slice(0, 5) },
+    notes: arr(r.notes).map(String).slice(-8),
+    questions: arr(r.questions).map(String).slice(0, 4),
+    actions: arr(r.actions).map((a) => (typeof a === "string" ? { what: a } : { who: String(a.who || ""), what: String(a.what || ""), when: String(a.when || "") })).filter((a) => a.what),
+    decisions: arr(r.decisions).map(String),
+    searchTerms: arr(r.searchTerms).map(String).slice(0, 6),
+  };
+}
+function keysOf(i) {
+  return [...i.notes, ...i.questions, ...i.decisions, ...i.actions.map((a) => a.what), ...i.context.points.map((p) => p.text)];
+}
+function handleSampleError(e) {
+  switch (e?.code) {
+    case "not_granted": case "sampling_disabled": case "not_declared": case "capability_disabled": case "capability_removed":
+      S.aiOff = true; setAiState("AI off", "err");
+      showBanner("<strong>AI notes are off.</strong> This page wasn't allowed to use Claude. The transcript still works; reload the page to be asked again.");
+      break;
+    case "rate_limited":
+      S.pausedUntil = Date.now() + 120000; setAiState("Paused 2 min", "err"); break;
+    case "cancelled": setAiState("Stopped"); break;
+    case "invalid_json": case "empty_completion": setAiState("Skipped one update", "err"); break;
+    case "session_expired": setAiState("Sign in again", "err"); break;
+    default: setAiState("Update failed", "err");
+  }
+}
+function setAiState(text, kind = "") { const s = $("aiState"); s.textContent = text; s.className = "state " + kind; }
+
+function renderInsights() {
+  Link.dirty();
+  const i = S.insights;
+  const el = $("insights");
+  const has = keysOf(i).length || i.topic || i.nudge;
+  if (!has) {
+    el.innerHTML = S.sample === null && S.booted
+      ? `<div class="empty"><strong>AI notes unavailable here</strong>Open this page in the Claude app to get live notes.</div>`
+      : `<div class="empty"><strong>Live notes appear here</strong>As people talk you'll see the current topic, a suggested next line, key points, questions to raise, action items, and context from the documents in the File you chose.</div>`;
+    return;
+  }
+  const fresh = (k) => (S.freshKeys.has(k) ? ' class="fresh"' : "");
+  const sec = (cls, title, items, fmt) => items.length ? `<div class="sec ${cls}"><h3>${title}</h3><ul>${items.map(fmt).join("")}</ul></div>` : "";
+  el.innerHTML = `
+    ${i.nudge ? `<div class="nudge"><div class="label">Say next</div><p>${esc(i.nudge)}</p></div>` : ""}
+    ${i.topic ? `<p class="topic">Now discussing: <span>${esc(i.topic)}</span></p>` : ""}
+    ${i.context.points.length ? `<div class="ctx"><h3>Context · ${esc(i.context.title || "from your files")}</h3><ul>${i.context.points.map((p) => `<li${fresh(p.text)}>${esc(p.text)}${p.source ? `<small>${esc(p.source)}</small>` : ""}</li>`).join("")}</ul></div>` : ""}
+    ${sec("q", "Questions to raise", i.questions, (q) => `<li${fresh(q)}>${esc(q)}</li>`)}
+    ${sec("a", "Action items", i.actions, (a) => `<li${fresh(a.what)}>${a.who ? `<b>${esc(a.who)}</b> · ` : ""}${esc(a.what)}${a.when ? `<small>${esc(a.when)}</small>` : ""}</li>`)}
+    ${sec("d", "Decisions", i.decisions, (d) => `<li${fresh(d)}>${esc(d)}</li>`)}
+    ${sec("n", "Notes", i.notes, (n) => `<li${fresh(n)}>${esc(n)}</li>`)}
+    ${S.contextLog.length ? `<details class="earlier"><summary>Earlier context (${S.contextLog.length})</summary>${S.contextLog.map((c) => `<div class="ctx past"><h3>${esc(c.title || "Context")}</h3><ul>${c.points.map((p) => `<li>${esc(p.text)}${p.source ? `<small>${esc(p.source)}</small>` : ""}</li>`).join("")}</ul></div>`).join("")}</details>` : ""}`;
+}
+
+// ---------- Ask ----------
+function renderChat() {
+  for (const m of S.chat) if (m.remoteId) Link.answer(m);
+  const el = $("chat");
+  el.innerHTML = S.chat.length
+    ? S.chat.map((m) => `<div class="msg ${m.role === "user" ? "me" : "ai"}">${esc(m.content)}${m.status ? `<div class="tool">${esc(m.status)}</div>` : ""}</div>`).join("")
+    : `<div class="empty"><strong>Ask anything mid-meeting</strong>"What did we quote them last time?" · "Who is on their team?" · "Does this match our proposal?"</div>`;
+  el.parentElement.scrollTop = el.parentElement.scrollHeight;
+}
+async function ask(q, remoteId = null) {
+  q = q.trim();
+  if (!q) return;
+  if (!S.sample) { toast("Ask needs the Claude app."); return; }
+  if (S.askCtl) { S.askCtl.abort(); return; }
+  $("askInput").value = "";
+  S.chat.push({ role: "user", content: q });
+  const reply = { role: "assistant", content: "", status: "Thinking…", remoteId, q };
+  S.chat.push(reply);
+  renderChat();
+  const ctl = (S.askCtl = new AbortController());
+  $("askBtn").textContent = "Stop";
+  const history = S.chat.slice(0, -2).filter((m) => m.content).slice(-10).map(({ role, content }) => ({ role, content }));
+  const rules = `You are the user's private meeting assistant. Answer their question about the meeting in progress or the linked project. Be brief: a few sentences or bullets they can read in 10 seconds. ${S.project.paths.length ? "Search the project files with the tools when the answer may be there, and cite file names." : ""} Never invent facts; say what you couldn't find.\n\n${context(150)}`;
+  const tools = projectTools();
+  const wrapped = tools?.map((t) => ({ ...t, async execute(input, c) { reply.status = (t.name === "search_project" ? "Searching project for “" + input.query + "”…" : "Reading " + String(input.path).split("/").pop() + "…"); renderChat(); return t.execute(input, c); } }));
+  try {
+    const opts = { signal: ctl.signal, onText: ({ text }) => { reply.content = text; reply.status = ""; renderChat(); } };
+    if (wrapped) opts.tools = wrapped; else opts.cache = false;
+    const r = await S.sample([{ role: "user", content: rules }, ...history, { role: "user", content: q }], opts);
+    reply.content = r.text; reply.status = r.truncated ? "Cut short." : "";
+  } catch (e) {
+    reply.content = e?.text || reply.content;
+    reply.status = e?.code === "cancelled" ? "Stopped." : e?.code === "rate_limited" ? "Too many requests. Try again in a minute." : e?.code === "not_granted" ? "This page isn't allowed to use Claude." : "Couldn't answer. Try again.";
+    if (!reply.content && e?.code === "refused") reply.content = "";
+  } finally {
+    S.askCtl = null; $("askBtn").textContent = "Ask"; reply.done = true; renderChat();
+  }
+}
+
+// ---------- Wrap up ----------
+async function wrapUp() {
+  if (!S.sample) { toast("Wrap up needs the Claude app."); return; }
+  if (S.status?.listening) { await toggleRecording(); }
+  if (!S.lines.length) { toast("There's no transcript to summarize yet."); return; }
+  const b = $("wrapBtn");
+  b.disabled = true; b.textContent = "Writing summary…";
+  openDoc("Meeting summary", "Writing the summary… this takes up to a minute.", null);
+  try {
+    const prompt = `Write the wrap-up for this meeting in Markdown.
+
+${context(600)}
+
+LIVE NOTES CAPTURED DURING THE CALL:
+${JSON.stringify(S.insights)}
+
+Sections, in order: "# <meeting name> — <today's date>", "## Summary" (4-6 sentences), "## Decisions", "## Action items" (a checklist: owner — task — due date, "TBD" when not stated), "## Open questions", "## Flagged moments" (only if any), ${S.project.paths.length ? `"## Relevant project facts" (from the linked project, with file names), ` : ""}"## Follow-up email" (a short, ready-to-send draft from the user to the attendees). Mark uncertain names or numbers with (?). No preamble.`;
+    const opts = { modelTier: "default", onText: ({ text }) => { $("docBody").textContent = text; } };
+    const tools = projectTools();
+    if (tools) opts.tools = tools; else opts.cache = false;
+    const r = await S.sample(prompt, opts);
+    openDoc("Meeting summary", r.text, { kind: "Summary" });
+    await saveWrapUp(r.text);
+  } catch (e) {
+    openDoc("Meeting summary", e?.text || "Couldn't write the summary. Try Wrap up again.", e?.text ? { kind: "Summary" } : null);
+  } finally { b.disabled = false; b.textContent = "Wrap up meeting"; }
+}
+const shortPath = (p) => String(p).replace(/^\/Users\/[^/]+/, "~");
+function liveNotesMarkdown() {
+  const i = S.insights, L = [`# ${$("meetingName").value || "Meeting"} — Live notes`, ""];
+  const ctx = (i.context.points.length ? [i.context] : []).concat(S.contextLog);
+  if (ctx.length) {
+    L.push("## Context from your files", "");
+    for (const c of ctx) L.push(`### ${c.title || "Context"}`, ...c.points.map((p) => `- ${p.text}${p.source ? ` _(${p.source})_` : ""}`), "");
+  }
+  const list = (title, items) => { if (items.length) L.push(`## ${title}`, ...items.map((x) => "- " + x), ""); };
+  list("Decisions", i.decisions);
+  list("Action items", i.actions.map((a) => `[ ] ${a.who ? a.who + " — " : ""}${a.what}${a.when ? " — " + a.when : ""}`));
+  list("Questions raised", i.questions);
+  list("Notes", i.notes);
+  list("Flagged moments", S.marks.map((m) => m.t));
+  return L.join("\n");
+}
+async function saveWrapUp(summary) {
+  try {
+    const a = await call("save_notes", { markdown: summary, kind: "Summary" });
+    await call("save_notes", { markdown: liveNotesMarkdown(), kind: "Live notes" });
+    $("docSave").hidden = true;
+    S.wrapped = true;
+    toast("Summary and live notes saved to " + shortPath(a.path.replace(/\/[^/]+$/, "")));
+  } catch (e) { toast("Couldn't save automatically: " + explain(e) + " Use Save to folder."); }
+}
+function openDoc(title, text, saveAs) {
+  S.doc = { text, saveAs };
+  $("docTitle").textContent = title;
+  $("docBody").textContent = text;
+  $("docSave").hidden = !saveAs;
+  $("docVeil").hidden = false;
+}
+
+// ---------- New meeting ----------
+async function newMeeting(confirmed = false) {
+  const recording = !!S.status?.listening;
+  const unsaved = S.lines.length > 0 && !S.wrapped;
+  if (!confirmed && (recording || unsaved)) {
+    showBanner(recording
+      ? "<strong>Start a new meeting?</strong> This stops the current recording. Its transcript is saved to the meeting folder; no summary will be written."
+      : "<strong>Start a new meeting?</strong> This meeting hasn't been wrapped up, so it has no summary. Its transcript is already saved.",
+      `<span class="row" style="margin-left:auto"><button class="btn sm" id="nmCancel">Keep this meeting</button><button class="btn sm primary" id="nmGo">Clear and start new</button></span>`);
+    $("nmCancel").onclick = () => showBanner("");
+    $("nmGo").onclick = () => newMeeting(true);
+    return;
+  }
+  showBanner("");
+  const b = $("newBtn");
+  b.disabled = true;
+  try {
+    S.askCtl?.abort();
+    if (recording) { b.textContent = "Stopping…"; await call("stop"); }
+    await call("reset_meeting");
+  } catch (e) { toast(explain(e)); b.disabled = false; b.textContent = "New meeting"; return; }
+  S.gen++;
+  Object.assign(S, {
+    lines: [], marks: [], insights: emptyInsights(), contextLog: [], freshKeys: new Set(), analyzedTo: 0, busy: false,
+    chat: [], agenda: "", overview: "", project: { name: "", paths: [] }, wrapped: false, doc: null, callWarned: false,
+  });
+  store.set("insights", null); store.set("contextLog", []); store.set("agenda", ""); store.set("name", "");
+  $("meetingName").value = ""; $("agenda").value = ""; $("askInput").value = ""; $("customPath").value = "";
+  $("docVeil").hidden = true;
+  try { S.status = await call("status"); } catch {}
+  renderTranscript(); renderInsights(); renderChat(); renderProjectList(); renderBar();
+  setAiState("Idle");
+  b.disabled = false; b.textContent = "New meeting";
+  $("meetingName").focus();
+  toast("Ready for a new meeting. Name it, choose a File, then press Start.");
+}
+
+// ---------- History ----------
+async function openHistory() {
+  $("historyVeil").hidden = false;
+  $("histList").innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    const r = await call("list_meetings");
+    $("histList").innerHTML = r.files.length
+      ? r.files.map((f) => `<button data-file="${esc(f.file)}">${esc(f.file.replace(/\.md$/, ""))}<br><small>${new Date(f.modified).toLocaleString()} · ${Math.ceil(f.bytes / 1024)} KB</small></button>`).join("")
+      : `<div class="empty">No saved meetings yet.</div>`;
+  } catch (e) { $("histList").innerHTML = `<div class="empty">${esc(explain(e))}</div>`; }
+}
+
+// ---------- Wiring ----------
+$("startBtn").onclick = toggleRecording;
+$("newBtn").onclick = () => newMeeting();
+$("markBtn").onclick = markMoment;
+$("refreshBtn").onclick = () => { if (S.lines.length > S.analyzedTo) analyze(); else toast("Nothing new to analyze yet."); };
+$("autoToggle").checked = S.auto;
+$("autoToggle").onchange = (e) => { S.auto = e.target.checked; store.set("auto", S.auto); if (S.auto) maybeAnalyze(); };
+$("wrapBtn").onclick = wrapUp;
+$("askBtn").onclick = () => ask($("askInput").value);
+$("askInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask($("askInput").value); } });
+$("quick").onclick = (e) => { const q = e.target.closest("button")?.dataset.q; if (q) ask(q); };
+$("projectChip").onclick = $("chooseBtn").onclick = chooseFolder;
+$("setupBtn").onclick = () => { $("setupVeil").hidden = false; if (S.mcp && !S.projectList) loadProject().catch((e) => toast(explain(e))); };
+$("historyBtn").onclick = openHistory;
+$("projectFilter").oninput = renderProjectList;
+$("linkBtn").onclick = () => linkProject([...$("projectList").querySelectorAll("input:checked")].map((i) => i.value));
+$("unlinkBtn").onclick = () => { $("customPath").value = ""; linkProject([]); };
+$("agenda").oninput = (e) => { S.agenda = e.target.value; store.set("agenda", S.agenda); };
+$("saveAgendaBtn").onclick = async () => { try { await call("set_agenda", { agenda: S.agenda }); toast("Agenda saved"); } catch (e) { toast(explain(e)); } };
+$("chunk").onchange = (e) => store.set("chunk", e.target.value);
+async function loadVoice() {
+  try {
+    const v = await call("voice_status");
+    S.voice = v.profile;
+    $("voiceState").textContent = v.profile ? `Voice profile saved ${new Date(v.profile.created).toLocaleDateString()}. Your lines are labeled ${hostName()}.` : "Not set up yet. Without it, every line from your mic gets your name, including other people in the room.";
+    $("voiceBtn").textContent = v.profile ? "Record again (30 s)" : "Record my voice (30 s)";
+  } catch {}
+}
+$("voiceBtn").onclick = async () => {
+  const b = $("voiceBtn");
+  if (S.status?.listening) { toast("Stop the meeting recording first."); return; }
+  b.disabled = true; b.textContent = "Starting…";
+  $("voiceRead").hidden = false;
+  try {
+    let st = await call("record_voice", { seconds: 30 });
+    if (st.state === "starting") toast("If macOS asks about the microphone, click Allow.");
+    for (let i = 0; i < 90 && !["done", "error"].includes(st.enroll?.state ?? st.state); i++) {
+      const e = st.enroll || st;
+      if (e.state === "recording") {
+        const left = Math.max(0, Math.ceil(e.seconds - (Date.now() / 1000 - e.startedAt)));
+        $("voiceTimer").textContent = left;
+        b.textContent = left ? "Recording… keep reading" : "Saving…";
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+      st = await call("voice_status");
+    }
+    const e = st.enroll || st;
+    if (e.state === "done") toast(`Voice profile saved. Your lines will be labeled ${hostName()}.`);
+    else toast(e.error || "Couldn't record your voice. Try again.");
+  } catch (err) { toast(explain(err)); }
+  $("voiceRead").hidden = true;
+  b.disabled = false;
+  loadVoice();
+};
+$("meetingName").oninput = (e) => store.set("name", e.target.value);
+$("histList").onclick = async (e) => {
+  const f = e.target.closest("button")?.dataset.file;
+  if (!f) return;
+  try { const r = await call("read_meeting", { file: f }); openDoc(f.replace(/\.md$/, ""), r.markdown, null); } catch (err) { toast(explain(err)); }
+};
+$("docCopy").onclick = async () => {
+  try { await navigator.clipboard.writeText(S.doc?.text || ""); toast("Copied"); }
+  catch { const r = document.createRange(); r.selectNodeContents($("docBody")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Selected. Press ⌘C to copy."); }
+};
+$("docSave").onclick = async () => { try { const r = await call("save_notes", { markdown: S.doc.text, kind: S.doc.saveAs.kind }); toast("Saved: " + shortPath(r.path)); } catch (e) { toast(explain(e)); } };
+document.querySelectorAll(".veil").forEach((v) => v.addEventListener("click", (e) => { if (e.target === v || e.target.closest("[data-close]")) v.hidden = true; }));
+document.querySelector(".tabs").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("on", p.id === b.dataset.pane));
+};
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, textarea, select")) return;
+  if (e.key === "Escape") document.querySelectorAll(".veil").forEach((v) => (v.hidden = true));
+  if (e.key === "m" || e.key === "M") markMoment();
+  if (e.key === "/") { e.preventDefault(); $("askInput").focus(); }
+});
+
+// ---------- Phone link (room) ----------
+// The Mac view ("hub") streams small snapshots to phones ("companion") and runs their commands.
+const fit = (o, max = 3800) => {
+  // Trim the longest arrays until the JSON fits the room's 4 KB message limit
+  let j = JSON.stringify(o);
+  for (let guard = 0; new Blob([j]).size > max && guard < 200; guard++) {
+    let key = null, len = 0;
+    for (const [k, v] of Object.entries(o)) if (Array.isArray(v) && v.length > len) { key = k; len = v.length; }
+    if (!key) { for (const [k, v] of Object.entries(o)) if (typeof v === "string" && v.length > 200) o[k] = v.slice(0, Math.floor(v.length * 0.7)) + "…"; }
+    else o[key] = o[key].slice(key === "lines" ? 1 : 0, key === "lines" ? undefined : -1);
+    j = JSON.stringify(o);
+  }
+  return o;
+};
+const Link = {
+  room: null, role: null, timer: null, last: {}, answerAt: {},
+  dirty() {
+    if (this.role !== "hub" || this.timer) return;
+    this.timer = setTimeout(() => { this.timer = null; this.send(); }, 1200);
+  },
+  emit(topic, data) { this.room?.emit(topic, data).catch(() => {}); },
+  send(force = false) {
+    if (this.role !== "hub" || !this.room) return;
+    const st = S.status || {};
+    const i = S.insights;
+    const parts = {
+      "mc.status": {
+        listening: !!st.listening, startedAt: st.startedAt || null, meeting: $("meetingName").value || st.meeting || "",
+        host: hostName(), folder: S.project.name || "", folderPath: S.project.paths[0] || "", callAudio: !!st.meetingAudio, voice: !!S.voice,
+        ai: $("aiState").textContent, canAsk: !!S.sample,
+      },
+      "mc.notes": fit({ topic: i.topic, nudge: i.nudge, questions: i.questions.slice(), actions: i.actions.slice(), decisions: i.decisions.slice() }),
+      "mc.ctx": fit({ title: i.context.title, points: i.context.points.map((p) => ({ text: p.text, source: p.source.split("/").pop() })) }),
+      "mc.lines": fit({ lines: S.lines.slice(-8).map((l) => ({ t: l.t, text: l.text.slice(0, 400) })) }),
+    };
+    for (const [topic, data] of Object.entries(parts)) {
+      const j = JSON.stringify(data);
+      if (force || this.last[topic] !== j) { this.last[topic] = j; this.emit(topic, data); }
+    }
+  },
+  sendFolders() {
+    const list = (S.projectList || []).filter((p) => p.where === "Desktop" || p.group === "claude").slice(0, 30).map((p) => ({ n: p.name, p: p.path }));
+    if (S.project.paths[0] && !list.some((f) => f.p === S.project.paths[0])) list.unshift({ n: S.project.name, p: S.project.paths[0] });
+    this.emit("mc.folders", fit({ list }));
+  },
+  answer(m) {
+    if (this.role !== "hub" || !m.remoteId) return;
+    const now = Date.now();
+    if (!m.done && now - (this.answerAt[m.remoteId] || 0) < 700) return;
+    this.answerAt[m.remoteId] = now;
+    this.emit("mc.answer", { id: m.remoteId, q: m.q.slice(0, 300), text: (m.content || "").slice(0, 3200), status: m.status || "", done: !!m.done });
+  },
+  async startHub() {
+    this.role = "hub";
+    if (!this.room) return;
+    this.room.presence({ role: "hub" }).catch(() => {});
+    this.room.on("mc.cmd", async (msg) => {
+      if (!msg.isMe || msg.sameTab) return;
+      const c = msg.data || {};
+      try {
+        if (c.type === "hello") { this.send(true); this.sendFolders(); }
+        else if (c.type === "mark") markMoment();
+        else if (c.type === "start" && !S.status?.listening) await toggleRecording();
+        else if (c.type === "stop" && S.status?.listening) await toggleRecording();
+        else if (c.type === "ask" && typeof c.q === "string") ask(c.q.slice(0, 1000), String(c.id || Date.now()));
+        else if (c.type === "folder" && typeof c.path === "string") {
+          await linkProject(c.path ? [c.path] : []);
+          watchIndex();
+          this.sendFolders();
+        }
+      } catch (e) { toast(explain(e)); }
+      this.send(true);
+    });
+    this.room.onPeers((ch) => { if (ch.joined.some((p) => !p.sameTab)) { this.send(true); this.sendFolders(); } });
+    setInterval(() => this.send(true), 10000);
+    this.send(true);
+  },
+};
+
+// Companion (phone) view
+const C = { st: null, notes: null, ctx: null, lines: [], folders: [], answer: null, hubSeen: 0, askId: null, lastNudge: "", lastCtx: "" };
+function startCompanion(room) {
+  Link.role = "companion"; Link.room = room;
+  document.getElementById("app").hidden = true;
+  $("banner").hidden = true;
+  $("comp").hidden = false; $("cAsk").hidden = false;
+  const cmd = (type, extra = {}) => room.emit("mc.cmd", { type, ...extra }).catch(() => toast("Not connected to your computer."));
+  room.on("mc.status", (m) => { if (m.isMe && !m.sameTab) { C.st = m.data; C.hubSeen = Date.now(); renderComp(); } });
+  room.on("mc.notes", (m) => {
+    if (!m.isMe || m.sameTab) return;
+    const n = m.data || {};
+    if (n.nudge && n.nudge !== C.lastNudge && C.lastNudge !== "") alertComp("Say next", n.nudge);
+    if (n.nudge) C.lastNudge = n.nudge;
+    C.notes = n; renderComp();
+  });
+  room.on("mc.ctx", (m) => {
+    if (!m.isMe || m.sameTab) return;
+    const c = m.data || {};
+    const key = (c.title || "") + "|" + (c.points?.[0]?.text || "");
+    if (c.points?.length && key !== C.lastCtx && C.lastCtx !== "") alertComp("New context", c.title || c.points[0].text);
+    if (c.points?.length) C.lastCtx = key;
+    C.ctx = c; renderComp();
+  });
+  room.on("mc.lines", (m) => { if (m.isMe && !m.sameTab) { C.lines = m.data?.lines || []; renderComp(); } });
+  room.on("mc.folders", (m) => { if (m.isMe && !m.sameTab) { C.folders = m.data?.list || []; renderFolders(); } });
+  room.on("mc.answer", (m) => { if (m.isMe && !m.sameTab && m.data?.id === C.askId) { C.answer = m.data; renderComp(); } });
+  room.onPeers(() => renderComp());
+  room.onConnection((ok) => { if (ok) cmd("hello"); });
+  $("cMark").onclick = () => { cmd("mark"); toast("Moment marked"); };
+  $("cStart").onclick = () => { cmd(C.st?.listening ? "stop" : "start"); $("cStart").disabled = true; $("cStart").textContent = C.st?.listening ? "Stopping…" : "Starting…"; setTimeout(() => { if ($("cStart").textContent.endsWith("…")) { $("cStart").textContent = C.st?.listening ? "Stop" : "Start"; renderLink(); } }, 25000); };
+  const sendAsk = () => {
+    const q = $("cAskInput").value.trim();
+    if (!q) return;
+    C.askId = "a" + Date.now();
+    C.answer = { q, text: "", status: "Asking your computer…" };
+    cmd("ask", { q, id: C.askId });
+    $("cAskInput").value = ""; $("cAskInput").blur();
+    renderComp();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  $("cAskBtn").onclick = sendAsk;
+  $("cAskInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendAsk(); });
+  $("cFolder").onchange = (e) => { cmd("folder", { path: e.target.value }); toast("Switching folder on your computer…"); };
+  let lock = null;
+  $("cWake").onchange = async (e) => {
+    try { if (e.target.checked) lock = await navigator.wakeLock.request("screen"); else { await lock?.release(); lock = null; } }
+    catch { e.target.checked = false; toast("This phone won't keep the screen on from here. Change Auto-Lock in Settings instead."); }
+  };
+  document.addEventListener("visibilitychange", async () => { if (document.visibilityState === "visible" && $("cWake").checked) { try { lock = await navigator.wakeLock.request("screen"); } catch {} } });
+  setInterval(() => {
+    if (C.st?.listening && C.st.startedAt) $("cTimer").textContent = fmtElapsed(Date.now() - Date.parse(C.st.startedAt));
+    renderLink();
+  }, 1000);
+  cmd("hello");
+  renderComp();
+}
+let alertT;
+function alertComp(kind, text) {
+  $("cAlertKind").textContent = kind; $("cAlertText").textContent = text;
+  const a = $("cAlert"); a.classList.add("show");
+  clearTimeout(alertT); alertT = setTimeout(() => a.classList.remove("show"), 6000);
+}
+$("cAlert").onclick = () => { $("cAlert").classList.remove("show"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+function hubOnline() {
+  const peers = Link.room?.peers() || [];
+  return peers.some((p) => !p.sameTab && p.presence?.role === "hub") || Date.now() - C.hubSeen < 25000;
+}
+function renderLink() {
+  const on = hubOnline();
+  $("cLink").classList.toggle("on", on);
+  $("cLinkText").textContent = on ? "Connected to your computer" : "Computer not connected";
+  $("cMark").disabled = !on || !C.st?.listening;
+  const b = $("cStart");
+  if (!b.textContent.endsWith("…") || !on) {
+    b.disabled = !on;
+    b.textContent = C.st?.listening ? "Stop" : "Start";
+    b.className = "btn " + (C.st?.listening ? "stop" : "primary");
+  }
+  $("cAskBtn").disabled = !on || C.st?.canAsk === false;
+}
+function renderFolders() {
+  const sel = $("cFolder");
+  const cur = C.st?.folderPath || "";
+  sel.innerHTML = `<option value="">No folder</option>` + C.folders.map((f) => `<option value="${esc(f.p)}" ${f.p === cur ? "selected" : ""}>${esc(f.n)}</option>`).join("");
+  $("cFolderCard").hidden = !C.folders.length;
+}
+function renderComp() {
+  const st = C.st;
+  renderLink();
+  if (st) {
+    $("cDot").parentElement.classList.toggle("rec", !!st.listening);
+    if (st.listening !== C.wasListening) { $("cStart").textContent = st.listening ? "Stop" : "Start"; C.wasListening = st.listening; }
+    if (!st.listening) $("cTimer").textContent = "00:00";
+    $("cMeta").innerHTML = `<b>${esc(st.meeting || "Untitled meeting")}</b> · ${st.folder ? "File: " + esc(st.folder) : "No folder"} · ${st.listening ? (st.callAudio ? "Mic + call audio" : "Mic only") : "Not recording"} · AI: ${esc(st.ai || "")}`;
+    if ($("cFolder").value !== (st.folderPath || "")) renderFolders();
+  }
+  const n = C.notes || {}, c = C.ctx || {};
+  const li = (items, fmt) => items.map(fmt).join("");
+  const parts = [];
+  if (C.answer) parts.push(`<div class="c-card c-answer"><h3>Answer</h3><div class="q">${esc(C.answer.q)}</div><p>${esc(C.answer.text || "")}</p>${C.answer.status ? `<small class="hint">${esc(C.answer.status)}</small>` : ""}${C.answer.done ? `<div style="margin-top:8px"><button class="btn sm" id="cClear">Clear</button></div>` : ""}</div>`);
+  if (n.nudge) parts.push(`<div class="c-card c-say"><h3>Say next</h3><p>${esc(n.nudge)}</p></div>`);
+  if (n.topic) parts.push(`<p class="topic" style="margin:0">Now discussing: <span>${esc(n.topic)}</span></p>`);
+  if (c.points?.length) parts.push(`<div class="c-card c-ctx"><h3>Context · ${esc(c.title || "from your files")}</h3><ul>${li(c.points, (p) => `<li>${esc(p.text)}${p.source ? `<small>${esc(p.source)}</small>` : ""}</li>`)}</ul></div>`);
+  if (n.questions?.length) parts.push(`<div class="c-card c-q"><h3>Questions to raise</h3><ul>${li(n.questions, (q) => `<li>${esc(q)}</li>`)}</ul></div>`);
+  if (n.actions?.length || n.decisions?.length) parts.push(`<details class="c-card"><summary style="cursor:pointer;font-weight:600">Action items &amp; decisions (${(n.actions?.length || 0) + (n.decisions?.length || 0)})</summary><ul style="margin-top:8px">${li(n.actions || [], (a) => `<li>${a.who ? `<b>${esc(a.who)}</b> · ` : ""}${esc(a.what)}${a.when ? `<small>${esc(a.when)}</small>` : ""}</li>`)}${li(n.decisions || [], (d) => `<li>✓ ${esc(d)}</li>`)}</ul></details>`);
+  if (C.lines.length) parts.push(`<div class="c-card c-lines"><h3>Latest transcript</h3>${li(C.lines, (l) => { const m = l.text.match(/^([^:]{1,30}): (.*)$/); const who = m ? m[1] : ""; const cls = who === (C.st?.host || "") ? "host" : who === "Call" ? "call" : who ? "guest" : ""; return `<div class="line"><time>${esc(l.t)}</time><p>${who ? `<b class="who ${cls}">${esc(who)}</b>` : ""}${esc(m ? m[2] : l.text)}</p></div>`; })}</div>`);
+  $("cBody").innerHTML = parts.length ? parts.join("") : hubOnline()
+    ? `<div class="c-wait"><strong>Connected</strong>${st?.listening ? "Listening. Notes appear after the first few lines." : "Press Start here or on your computer to begin."}</div>`
+    : `<div class="c-wait"><strong>Waiting for your computer</strong>Open Meeting Copilot in the Claude app on your computer. Live notes appear here once it's open.</div>`;
+  const clr = document.getElementById("cClear");
+  if (clr) clr.onclick = () => { C.answer = null; C.askId = null; renderComp(); };
+}
+
+// ---------- Boot ----------
+$("meetingName").value = store.get("name", "");
+$("chunk").value = store.get("chunk", "20");
+S.agenda = store.get("agenda", "");
+$("agenda").value = S.agenda;
+renderTranscript(); renderInsights(); renderChat(); renderBar();
+
+(async () => {
+  const use = (n) => (window.claude?.use ? window.claude.use(n).catch(() => null) : Promise.resolve(null));
+  [S.mcp, S.sample, Link.room] = await Promise.all([use("mcp"), use("sample"), use("room")]);
+  S.booted = true;
+  renderInsights();
+  let hub = false;
+  if (S.mcp) { try { await refreshStatus(); hub = true; } catch (e) { S.bootErr = e; } }
+  if (!hub) {
+    // No connection to the Mac helper here (e.g. on a phone): become the companion if the live link works
+    if (Link.room) { startCompanion(Link.room); return; }
+    showBanner(S.mcp ? `<strong>Not connected.</strong> ${esc(explain(S.bootErr))}` : explain({ code: "no_mcp" }), S.mcp ? `<button class="btn sm" onclick="location.reload()">Try again</button>` : "");
+    renderBar(); return;
+  }
+  Link.startHub();
+  try {
+    await loadProject();
+    watchIndex();
+    loadVoice();
+    if (!S.agenda) { const a = await call("get_agenda"); S.agenda = a.agenda || ""; $("agenda").value = S.agenda; }
+    if (S.status.listening || S.status.lineCount) {
+      if (S.status.listening && S.status.meeting) $("meetingName").value = S.status.meeting;
+      await pullTranscript();
+      const saved = store.get("insights", null);
+      if (saved) { S.insights = normalize(saved); S.analyzedTo = S.lines.length; renderInsights(); }
+    }
+  } catch (e) {
+    showBanner(`<strong>Not connected.</strong> ${esc(explain(e))}`, `<button class="btn sm" onclick="location.reload()">Try again</button>`);
+  }
+  renderBar();
+})();
+</script>
