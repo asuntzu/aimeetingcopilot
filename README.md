@@ -17,7 +17,7 @@ A private, on-device meeting assistant for the **Claude desktop app**. It listen
 
 ## Privacy and security
 
-See [SECURITY.md](SECURITY.md) for the full list of protections, known limits and how to report a vulnerability.
+See [SECURITY.md](SECURITY.md) for the full list of protections, known limits and how to report a vulnerability. Latest review: [October 4, 2026](docs/SECURITY-REVIEW-2026-10-04.md).
 
 - **Audio never leaves your computer and is never stored.** It's recorded in 10–30 second pieces, turned into text locally, and deleted within seconds.
 - **Your voice profile is a voiceprint** (about 200 numbers), not a recording.

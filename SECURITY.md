@@ -2,6 +2,10 @@
 
 AI Meeting Copilot handles sensitive material: live conversations, a voiceprint, and private documents. This page describes how it is protected and what it does not protect against.
 
+## Security reviews
+
+- [October 4, 2026](docs/SECURITY-REVIEW-2026-10-04.md): 1 serious and 9 smaller issues found and fixed.
+
 ## Reporting a vulnerability
 
 Please **don't open a public issue** for security problems. Use GitHub's private reporting instead: **Security → Report a vulnerability** on this repository. Include steps to reproduce and the version (commit) you tested.
