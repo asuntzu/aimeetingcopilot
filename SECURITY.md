@@ -5,6 +5,7 @@ AI Meeting Copilot handles sensitive material: live conversations, a voiceprint,
 ## Security reviews
 
 - [October 4, 2026](docs/SECURITY-REVIEW-2026-10-04.md): 1 serious and 9 smaller issues found and fixed.
+- [October 4, 2026, scheduling feature](docs/SECURITY-REVIEW-2026-10-04-SCHEDULING.md): reviewed and attack-tested before release.
 
 ## Reporting a vulnerability
 
@@ -25,6 +26,7 @@ Please **don't open a public issue** for security problems. Use GitHub's private
 | **Page (Artifact)** | All transcript, document, file-name and AI text is HTML-escaped before display. The page can only call the helper actions listed in `artifact/capabilities.json`, and the Claude app asks before the page uses Claude or the helper. |
 | **Phone companion** | Live updates travel only between your own signed-in devices; nothing is stored online. Commands from the phone are accepted only from your own account, and folder changes only to folders the computer offered. If anyone else opens the page (for example, if you shared it), the computer stops sending meeting content until they leave. |
 | **Helper exposure** | The installer registers the helper only with the Claude desktop app, not with Claude Code, so coding sessions can't start your microphone. |
+| **Scheduling (Google Calendar, Gmail)** | The page may only create calendar events, read your calendar and create Gmail **drafts**. It can't send email. Calendar invites go out only after a two-step confirmation. Everything placed in invites, emails and the attached `.ics` file is escaped or encoded (no AI-supplied HTML or links, no injected calendar lines), and only verified `https://meet.google.com` and Google links are used. The attendee briefing is kept separate from the private prep brief and must be reviewed before sending. The address book (`contacts.json`) is validated, stored only on your computer with private permissions, and never sent to the phone companion. |
 | **Supply chain** | Downloaded models and the Windows whisper.cpp build are verified against SHA-256 fingerprints before use; Python dependencies are pinned to exact tested versions. |
 
 ## Known limits

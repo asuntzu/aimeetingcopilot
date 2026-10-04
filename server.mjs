@@ -437,6 +437,26 @@ function saveOutput(kind, text) {
   return out;
 }
 
+// ---------- Address book (private, local) ----------
+const CONTACTS = path.join(DIR, "contacts.json");
+const MEETINGS_INDEX = path.join(DIR, "meetings-index.json");
+const EMAIL_RE = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}$/;
+const TZ_RE = /^[A-Za-z]+(?:\/[A-Za-z0-9_+-]+){0,2}$/;
+const clip = (s, n) => String(s ?? "").replace(/[\u0000-\u001f<>]/g, " ").trim().slice(0, n);
+function cleanContact(c) {
+  if (!c || typeof c !== "object") return null;
+  const email = String(c.email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return null;
+  const out = { email, name: clip(c.name, 100) || email.split("@")[0] };
+  if (TZ_RE.test(String(c.tz || ""))) out.tz = String(c.tz);
+  if (c.org) out.org = clip(c.org, 100);
+  if (c.lastMet && /^\d{4}-\d{2}-\d{2}/.test(String(c.lastMet))) out.lastMet = String(c.lastMet).slice(0, 25);
+  return out;
+}
+function loadContacts() {
+  try { return JSON.parse(fs.readFileSync(CONTACTS, "utf8")).map(cleanContact).filter(Boolean); } catch { return []; }
+}
+
 const tools = {
   ...projectTools,
   status: {
@@ -490,6 +510,79 @@ const tools = {
       Object.assign(IDX, { key: "", passages: [], postings: new Map(), done: 0, total: 0, building: null });
       fs.writeFileSync(PROJECT, JSON.stringify({ name: "", paths: [] }, null, 2));
       return { ok: true, ...status() };
+    },
+  },
+  // ---------- Scheduling: private address book + meeting plans ----------
+  contacts_list: {
+    description: "People the user has met with before (name, email, time zone, organization), most recent first. Stored privately on this computer.",
+    readOnly: true,
+    schema: { type: "object", properties: {} },
+    run: () => ({ contacts: loadContacts().sort((a, b) => String(b.lastMet || "").localeCompare(String(a.lastMet || ""))) }),
+  },
+  contacts_save: {
+    description: "Add or update people in the private address book (matched by email).",
+    schema: { type: "object", properties: { contacts: { type: "array", items: { type: "object" } } }, required: ["contacts"] },
+    run: ({ contacts }) => {
+      const book = new Map(loadContacts().map((c) => [c.email, c]));
+      for (const raw of (Array.isArray(contacts) ? contacts : []).slice(0, 100)) {
+        const c = cleanContact(raw);
+        if (c) book.set(c.email, { ...(book.get(c.email) || {}), ...c });
+      }
+      const list = [...book.values()].sort((a, b) => String(b.lastMet || "").localeCompare(String(a.lastMet || ""))).slice(0, 1000);
+      fs.writeFileSync(CONTACTS, JSON.stringify(list, null, 2));
+      return { saved: list.length };
+    },
+  },
+  contacts_delete: {
+    description: "Remove one person from the private address book.",
+    schema: { type: "object", properties: { email: { type: "string" } }, required: ["email"] },
+    run: ({ email }) => {
+      const e = String(email || "").trim().toLowerCase();
+      const list = loadContacts().filter((c) => c.email !== e);
+      fs.writeFileSync(CONTACTS, JSON.stringify(list, null, 2));
+      return { saved: list.length };
+    },
+  },
+  save_meeting_plan: {
+    description: "Save a scheduled meeting's attendee briefing, private prep brief and details into the current meeting folder, and remember which folder belongs to the calendar event.",
+    schema: { type: "object", properties: { event: { type: "object" }, attendees: { type: "array" }, attendeeBriefing: { type: "string" }, prepBrief: { type: "string" } }, required: ["event"] },
+    run: ({ event, attendees, attendeeBriefing, prepBrief }) => {
+      const ev = event || {};
+      const id = String(ev.id || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 200);
+      if (!id) throw new Error("Missing calendar event id.");
+      const title = safeName(ev.title) || "Meeting";
+      const day = String(ev.start || "").slice(0, 10).replace(/[^0-9-]/g, "") || new Date().toISOString().slice(0, 10);
+      const folder = project().paths.find((p) => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() && !isSensitive(p)) || ARCHIVE;
+      const write = (kind, text) => {
+        if (!text || !String(text).trim()) return null;
+        const out = path.join(folder, `${day} ${title} - ${kind}.md`);
+        if (path.dirname(out) !== folder) return null;
+        fs.writeFileSync(out, String(text).slice(0, 500_000));
+        return out;
+      };
+      const people = (Array.isArray(attendees) ? attendees : []).map(cleanContact).filter(Boolean).slice(0, 100);
+      const files = { attendeeBriefing: write("Attendee briefing", attendeeBriefing), prepBrief: write("Prep brief (private)", prepBrief) };
+      const details = {
+        eventId: id, title, start: String(ev.start || ""), end: String(ev.end || ""), timeZone: String(ev.timeZone || ""),
+        meetUrl: /^https:\/\/meet\.google\.com\//.test(ev.meetUrl || "") ? ev.meetUrl : "", location: String(ev.location || "").slice(0, 300),
+        attendees: people.map(({ name, email, tz }) => ({ name, email, tz })),
+      };
+      fs.writeFileSync(path.join(folder, `${day} ${title} - Meeting details.json`), JSON.stringify(details, null, 2));
+      const index = JSON.parse(read(MEETINGS_INDEX, "{}"));
+      index[id] = { folder, title, start: details.start };
+      for (const k of Object.keys(index).sort((a, b) => String(index[a].start).localeCompare(String(index[b].start))).slice(0, -500)) delete index[k];
+      fs.writeFileSync(MEETINGS_INDEX, JSON.stringify(index, null, 2));
+      return { folder, files };
+    },
+  },
+  meeting_for_event: {
+    description: "For a calendar event scheduled with this copilot, return the meeting folder and attendees saved with it.",
+    readOnly: true,
+    schema: { type: "object", properties: { eventId: { type: "string" } }, required: ["eventId"] },
+    run: ({ eventId }) => {
+      const entry = JSON.parse(read(MEETINGS_INDEX, "{}"))[String(eventId || "")];
+      if (!entry || !fs.existsSync(entry.folder) || isSensitive(entry.folder) || !within(real(entry.folder), real(HOME))) return { found: false };
+      return { found: true, folder: entry.folder, name: path.basename(entry.folder), title: entry.title, start: entry.start };
     },
   },
   record_voice: {

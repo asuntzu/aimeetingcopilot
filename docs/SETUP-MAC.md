@@ -59,7 +59,11 @@ The page lives in your own Claude account, so each person publishes their own co
 4. Type a meeting name and press **Start**. On the first meeting macOS asks about **system audio recording** for AI Meeting Copilot Recorder: click **Allow**. That's what lets it hear Zoom and Meet.
 5. Talk for a minute. Lines with your name appear in the transcript, then the AI notes.
 
-## 6. Phone companion (optional)
+## 6. Scheduling and briefings (optional)
+
+To invite people and send briefings from the copilot, turn on the **Google Calendar** and **Gmail** connectors in claude.ai → **Settings → Connectors** (sign in with the Google account you want to send from). The first time you click **Schedule**, allow the page to use them. See [SCHEDULING.md](SCHEDULING.md).
+
+## 7. Phone companion (optional)
 
 Open the Claude app on your phone → **Artifacts** → **Meeting Copilot** while the page is open on your Mac. The phone shows **Connected to your computer** and the live notes.
 
@@ -96,6 +100,13 @@ Open the Claude app on your phone → **Artifacts** → **Meeting Copilot** whil
 - Context comes only from the folder you chose with **File**. Check that it contains PDF, Word (.docx), text, Markdown, RTF or HTML files.
 - While the folder is being read, the File chip shows "reading 3/12". Large folders take longer the first time.
 - Scanned PDFs (photos of pages) have no text to read.
+
+**Schedule or Today says "Connect Google Calendar" or "Connect Gmail"**
+- Turn on that connector in claude.ai → **Settings → Connectors** and sign in, then reload the page.
+- If it says the connector is turned off for this page, open the page's **Permissions** menu and allow it.
+
+**The invite went out but the briefing email didn't appear**
+- Click **Try the draft again** in the Schedule window. The draft is in Gmail under **Drafts**; nothing is emailed until you press Send there.
 
 **"AI notes are off"**
 - The page wasn't allowed to use Claude. Reload it and choose **Allow** when asked, or open the page's **Permissions** menu.

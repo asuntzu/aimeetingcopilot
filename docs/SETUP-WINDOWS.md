@@ -68,7 +68,11 @@ Quit Claude completely: right-click the Claude icon in the system tray (bottom-r
 4. Type a meeting name and press **Start**. The top of the page should say **Mic + call audio**.
 5. Talk for a minute. Lines with your name appear in the transcript, then the AI notes.
 
-## 7. Phone companion (optional)
+## 7. Scheduling and briefings (optional)
+
+To invite people and send briefings from the copilot, turn on the **Google Calendar** and **Gmail** connectors in claude.ai → **Settings → Connectors** (sign in with the Google account you want to send from). The first time you click **Schedule**, allow the page to use them. See [SCHEDULING.md](SCHEDULING.md).
+
+## 8. Phone companion (optional)
 
 Open the Claude app on your phone → **Artifacts** → **Meeting Copilot** while the page is open on your PC. The phone shows **Connected to your computer** and the live notes.
 
@@ -122,6 +126,13 @@ Open the Claude app on your phone → **Artifacts** → **Meeting Copilot** whil
 - Context comes only from the folder you chose with **File**. Check that it contains PDF, Word (.docx), text, Markdown, RTF or HTML files. Old `.doc` files aren't supported on Windows; save them as `.docx`.
 - Scanned PDFs (photos of pages) have no text to read.
 - Documents in OneDrive that are "online-only" must be downloaded first: right-click the folder → **Always keep on this device**.
+
+**Schedule or Today says "Connect Google Calendar" or "Connect Gmail"**
+- Turn on that connector in claude.ai → **Settings → Connectors** and sign in, then reload the page.
+- If it says the connector is turned off for this page, open the page's **Permissions** menu and allow it.
+
+**The invite went out but the briefing email didn't appear**
+- Click **Try the draft again** in the Schedule window. The draft is in Gmail under **Drafts**; nothing is emailed until you press Send there.
 
 **"AI notes are off"**
 - The page wasn't allowed to use Claude. Reload it and choose **Allow** when asked, or open the page's **Permissions** menu.
