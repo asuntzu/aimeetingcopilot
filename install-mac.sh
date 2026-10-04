@@ -27,13 +27,24 @@ done
 say "3/7  Setting up Python packages"
 uv venv --quiet --allow-existing --python 3.12 .venv
 uv pip install --quiet --python .venv/bin/python -r requirements.txt
+chmod 700 "$DIR"  # meetings, voiceprint and settings are private to you
 
 say "4/7  Downloading speech models (about 210 MB, one time)"
 mkdir -p models
-[ -f models/ggml-small.en-q5_1.bin ] || curl -L --fail -o models/ggml-small.en-q5_1.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin
-[ -f models/wespeaker_en_voxceleb_resnet34.onnx ] || curl -L --fail -o models/wespeaker_en_voxceleb_resnet34.onnx \
-  https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx
+# Download a file and refuse it unless its SHA-256 matches the known-good value.
+fetch() {
+  local url="$1" out="$2" sha="$3"
+  if [ -f "$out" ] && [ "$(shasum -a 256 "$out" | cut -d' ' -f1)" = "$sha" ]; then return; fi
+  curl -L --fail --proto '=https' --tlsv1.2 -o "$out.part" "$url"
+  if [ "$(shasum -a 256 "$out.part" | cut -d' ' -f1)" != "$sha" ]; then
+    rm -f "$out.part"; echo "SECURITY: $out failed its integrity check and was deleted. Try again later."; exit 1
+  fi
+  mv "$out.part" "$out"
+}
+fetch https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin \
+  models/ggml-small.en-q5_1.bin bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30
+fetch https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx \
+  models/wespeaker_en_voxceleb_resnet34.onnx 5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94
 
 say "5/7  Building the call-audio helper and recorder app"
 mkdir -p bin
@@ -69,10 +80,8 @@ cfg = json.load(open(p)) if os.path.exists(p) else {}
 cfg.setdefault("mcpServers", {})["meeting-copilot"] = {"command": os.environ["NODE"], "args": [os.environ["SERVER"]]}
 json.dump(cfg, open(p, "w"), indent=2)
 PY
-if command -v claude >/dev/null; then
-  claude mcp remove -s user meeting-copilot >/dev/null 2>&1 || true
-  claude mcp add -s user meeting-copilot -- "$NODE" "$DIR/server.mjs" >/dev/null && echo "Also registered with Claude Code."
-fi
+# Security: the helper is registered only with the Claude desktop app (which can ask you to confirm actions),
+# not with Claude Code, so no coding session can start your microphone.
 
 cat <<EOF
 

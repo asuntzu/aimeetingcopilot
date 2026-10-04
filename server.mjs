@@ -2,7 +2,7 @@
 // AI Meeting Copilot helper: a local MCP server (stdio) the Meeting Copilot artifact page uses to
 // control the recorder (processor.py) and read the chosen meeting folder. macOS and Windows.
 // and read transcripts. No dependencies.
-import { spawn, execFile } from "node:child_process";
+import { spawn, execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
@@ -22,6 +22,7 @@ fs.mkdirSync(LIVE, { recursive: true });
 fs.mkdirSync(ARCHIVE, { recursive: true });
 
 const IS_WIN = process.platform === "win32";
+if (!IS_WIN) process.umask(0o077); // transcripts, notes, voiceprint and cache are readable only by you
 const ENV = IS_WIN ? { ...process.env } : { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}` };
 const PY = IS_WIN ? path.join(DIR, ".venv", "Scripts", "python.exe") : path.join(DIR, ".venv", "bin", "python");
 const RECORDER_APP = path.join(DIR, "AI Meeting Copilot Recorder.app");
@@ -43,10 +44,24 @@ function launchProcessor(args) {
 const read = (f, d = "") => { try { return fs.readFileSync(f, "utf8"); } catch { return d; } };
 const slug = (s) => String(s || "meeting").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "meeting";
 
+const verified = new Map();
+function isRecorder(p) {
+  if (verified.has(p)) return verified.get(p);
+  let cmd = "";
+  try {
+    cmd = IS_WIN
+      ? execFileSync("powershell.exe", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${p}").CommandLine`], { windowsHide: true, timeout: 8000 }).toString()
+      : execFileSync("/bin/ps", ["-o", "command=", "-p", String(p)], { timeout: 4000 }).toString();
+  } catch {}
+  const ok = /processor\.py/.test(cmd);
+  verified.set(p, ok);
+  return ok;
+}
 function pid() {
   const p = parseInt(read(PIDFILE), 10);
   if (!p) return null;
-  try { process.kill(p, 0); return p; } catch { return null; }
+  try { process.kill(p, 0); } catch { verified.delete(p); return null; }
+  return isRecorder(p) ? p : null;
 }
 
 function parseTranscript(text) {
@@ -93,11 +108,26 @@ const run = (cmd, args, opts = {}) => new Promise((resolve) => {
   execFile(cmd, args, { env: ENV, maxBuffer: 20 * 1024 * 1024, timeout: 20000, ...opts }, (err, stdout) => resolve(stdout || ""));
 });
 const project = () => JSON.parse(read(PROJECT, '{"paths":[]}'));
-const inProject = (p) => project().paths.some((root) => p === root || p.startsWith(root + path.sep));
+// Security: resolve symlinks before any containment check, and never let a meeting folder
+// (or a file inside one) reach credentials, keychains, app data or hidden folders.
+const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+const within = (child, parent) => child === parent || child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep);
+const SENSITIVE = new Set(["library", "appdata", "application data", "keychains", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config", ".local", ".npm", ".claude", ".git"]);
+function isSensitive(p) {
+  const rel = path.relative(real(HOME), real(p));
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return true; // outside the home folder
+  return rel.split(/[\\/]/).some((seg) => seg.startsWith(".") || SENSITIVE.has(seg.toLowerCase()));
+}
+const inProject = (p) => {
+  const rp = real(p);
+  return !isSensitive(rp) && project().paths.some((root) => within(rp, real(root)));
+};
 
 async function fileText(f, max = 12000) {
   const ext = path.extname(f).toLowerCase();
   let text;
+  const size = fs.statSync(f, { throwIfNoEntry: false })?.size ?? 0;
+  if (size > 25 * 1024 * 1024) return { text: "", truncated: false, chars: 0 }; // skip huge files
   if ([".pdf", ".docx", ".doc", ".rtf", ".odt", ".pages", ".html", ".htm"].includes(ext)) text = await run(PY, [path.join(DIR, "extract.py"), f], { timeout: 60000 });
   else text = read(f);
   return { text: text.slice(0, max), truncated: text.length > max, chars: text.length };
@@ -111,7 +141,7 @@ function tree(root, max = 250) {
     try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents.sort((a, b) => a.name.localeCompare(b.name))) {
       if (out.length >= max) return;
-      if (e.name.startsWith(".") || SKIP.has(e.name)) continue;
+      if (e.name.startsWith(".") || SKIP.has(e.name) || e.isSymbolicLink()) continue;
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p, depth + 1);
       else out.push(path.relative(root, p));
@@ -155,7 +185,7 @@ function docFiles(root, max = 3000) {
     let ents = [];
     try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
-      if (e.name.startsWith(".") || SKIP.has(e.name) || /duplicates/i.test(e.name)) continue;
+      if (e.name.startsWith(".") || SKIP.has(e.name) || /duplicates/i.test(e.name) || e.isSymbolicLink()) continue;
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p, depth + 1);
       else if (DOC_EXT.test(e.name)) out.push(p);
@@ -183,6 +213,7 @@ function buildIndex() {
     const jobs = [];
     for (const root of project().paths) for (const f of docFiles(root)) jobs.push([f, root]);
     IDX.total = jobs.length;
+    const allJobs = jobs.slice();
     let dirty = 0;
     const worker = async () => {
       while (jobs.length && IDX.key === key) {
@@ -203,6 +234,9 @@ function buildIndex() {
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
+    // Keep cached document text only for the folder in use (data minimization)
+    const keep = new Set(allJobs.map(([f]) => f));
+    for (const f of Object.keys(fileCache)) if (!keep.has(f)) { delete fileCache[f]; dirty++; }
     if (dirty) { fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true }); fs.writeFileSync(CACHE_FILE, JSON.stringify(fileCache)); }
     if (IDX.key === key) IDX.building = null;
   })();
@@ -314,8 +348,10 @@ const projectTools = {
       const ok = [];
       for (let p of paths || []) {
         p = path.resolve(String(p).replace(/^~(?=$|\/)/, HOME));
-        if (!p.startsWith(HOME + path.sep)) throw new Error(`Only folders inside your home folder can be linked: ${p}`);
         if (!fs.existsSync(p)) throw new Error(`Folder not found: ${p}`);
+        p = real(p);
+        if (!within(p, real(HOME)) || p === real(HOME)) throw new Error("Only folders inside your home folder can be linked (not the home folder itself).");
+        if (isSensitive(p)) throw new Error("That folder holds system or private settings and can't be used as a meeting folder.");
         ok.push(p);
       }
       const proj = { name: String(name || (ok[0] ? path.basename(ok[0]) : "")), paths: ok };
@@ -354,7 +390,7 @@ const projectTools = {
       const proj = project();
       if (!q || !proj.paths.length) return { matches: [], documents: [], note: proj.paths.length ? "empty query" : "no project linked" };
       const globs = [...SKIP].flatMap((s) => ["-g", `!${s}`]);
-      const rg = await run(RG, ["-i", "-n", "-F", "--max-count", "3", "--max-columns", "300", "--max-filesize", "2M", "-g", "!*.min.*", "-g", "!*lock*", ...globs, q, ...proj.paths]);
+      const rg = await run(RG, ["-i", "-n", "-F", "--max-count", "3", "--max-columns", "300", "--max-filesize", "2M", "-g", "!*.min.*", "-g", "!*lock*", "--no-config", ...globs, "-e", q, "--", ...proj.paths]);
       const matches = rg.split("\n").filter(Boolean).slice(0, 40).map((l) => {
         const m = l.match(/^(.*?):(\d+):(.*)$/);
         return m ? { file: m[1], line: +m[2], text: m[3].trim().slice(0, 280) } : { text: l.slice(0, 280) };
@@ -362,7 +398,7 @@ const projectTools = {
       const documents = new Set();
       for (const root of proj.paths) {
         if (!fs.statSync(root).isDirectory()) continue;
-        const hits = IS_WIN ? "" : await run("/usr/bin/mdfind", ["-onlyin", root, q]);
+        const hits = IS_WIN ? "" : await run("/usr/bin/mdfind", ["-onlyin", root, q.replace(/^-+/, "")]);
         for (const f of hits.split("\n")) if (f && !f.split(path.sep).some((s) => SKIP.has(s)) && /\.(pdf|docx?|rtf|pages|key|pptx?|xlsx?|md|txt)$/i.test(f)) documents.add(f);
       }
       return { matches, documents: [...documents].slice(0, 20) };
@@ -384,17 +420,19 @@ const projectTools = {
 };
 
 // Meeting outputs go into the chosen meeting folder (first linked folder), plus a copy in archive/.
+const safeName = (s, max = 80) => String(s || "").replace(/[\u0000-\u001f\\/:*?"<>|]/g, " ").replace(/\.{2,}/g, ".").replace(/^[\s.]+|[\s.]+$/g, "").slice(0, max).trim();
 function saveOutput(kind, text) {
   if (!text || !text.trim()) return null;
   const st = JSON.parse(read(STATE, "{}"));
   const d = st.startedAt ? new Date(st.startedAt) : new Date();
   const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const title = String(st.meeting || "Meeting").replace(/[\\/:*?"<>|]/g, " ").trim();
-  const name = `${stamp} ${title} - ${kind}.md`;
+  const title = safeName(st.meeting) || "Meeting";
+  const name = `${stamp} ${title} - ${safeName(kind, 40) || "Notes"}.md`;
   fs.writeFileSync(path.join(ARCHIVE, name), text);
-  const folder = project().paths.find((p) => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory());
+  const folder = project().paths.find((p) => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() && !isSensitive(p));
   if (!folder) return path.join(ARCHIVE, name);
   const out = path.join(folder, name);
+  if (path.dirname(out) !== folder) return path.join(ARCHIVE, name);
   fs.writeFileSync(out, text);
   return out;
 }
@@ -447,7 +485,9 @@ const tools = {
     schema: { type: "object", properties: {} },
     run: () => {
       if (pid()) throw new Error("Stop the recording first.");
-      for (const f of [TRANSCRIPT, STATE, LOG, path.join(LIVE, "level.json"), AGENDA]) { try { fs.unlinkSync(f); } catch {} }
+      for (const f of [TRANSCRIPT, STATE, LOG, path.join(LIVE, "level.json"), AGENDA, CACHE_FILE]) { try { fs.unlinkSync(f); } catch {} }
+      fileCache = {};
+      Object.assign(IDX, { key: "", passages: [], postings: new Map(), done: 0, total: 0, building: null });
       fs.writeFileSync(PROJECT, JSON.stringify({ name: "", paths: [] }, null, 2));
       return { ok: true, ...status() };
     },
@@ -493,12 +533,15 @@ const tools = {
   set_agenda: {
     description: "Save the meeting agenda/context notes.",
     schema: { type: "object", properties: { agenda: { type: "string" } }, required: ["agenda"] },
-    run: ({ agenda }) => { fs.writeFileSync(AGENDA, String(agenda ?? "")); return { saved: true }; },
+    run: ({ agenda }) => { fs.writeFileSync(AGENDA, String(agenda ?? "").slice(0, 100_000)); return { saved: true }; },
   },
   save_notes: {
     description: "Save a markdown document for the current meeting (kind: Summary, Live notes, ...) into the chosen meeting folder, with a copy in the copilot archive. Returns the saved path.",
     schema: { type: "object", properties: { markdown: { type: "string" }, kind: { type: "string" } }, required: ["markdown"] },
-    run: ({ markdown, kind }) => ({ path: saveOutput(String(kind || "Summary"), String(markdown)) }),
+    run: ({ markdown, kind }) => {
+      if (String(markdown).length > 2_000_000) throw new Error("Document too large to save.");
+      return { path: saveOutput(String(kind || "Summary"), String(markdown)) };
+    },
   },
   list_meetings: {
     description: "List saved transcripts and summaries in archive/, newest first.",

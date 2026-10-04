@@ -411,10 +411,19 @@ class Session:
         log(f"Saved: {os.path.join(ARCHIVE, f'{self.stamp}-{self.name}.md')}")
 
 
+def safe_slug(name):
+    """Meeting names end up in file names: keep them to letters, digits and dashes."""
+    return re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")[:60] or "meeting"
+
+
 if __name__ == "__main__":
+    if not IS_WIN:
+        os.umask(0o077)  # transcripts and the voiceprint are readable only by you
     if IS_MAC:
         os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + os.environ.get("PATH", "")
     if len(sys.argv) > 1 and sys.argv[1] == "--enroll":
-        enroll(int(sys.argv[2]) if len(sys.argv) > 2 else 30)
+        secs = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 30
+        enroll(min(60, max(15, secs)))
     else:
-        Session(sys.argv[1] if len(sys.argv) > 1 else "meeting", int(sys.argv[2]) if len(sys.argv) > 2 else 20).run()
+        chunk = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 20
+        Session(safe_slug(sys.argv[1] if len(sys.argv) > 1 else "meeting"), min(60, max(10, chunk))).run()

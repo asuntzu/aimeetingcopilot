@@ -32,23 +32,28 @@ uv pip install --quiet --python .venv\Scripts\python.exe -r requirements.txt
 Step "4/7  Downloading whisper.cpp and speech models (about 230 MB, one time)"
 New-Item -ItemType Directory -Force -Path models, bin | Out-Null
 $ProgressPreference = "SilentlyContinue"
+# Download a file and refuse it unless its SHA-256 matches the known-good value.
+function Fetch($url, $out, $sha) {
+  if ((Test-Path $out) -and ((Get-FileHash $out -Algorithm SHA256).Hash -eq $sha.ToUpper())) { return }
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  Invoke-WebRequest $url -OutFile "$out.part" -UseBasicParsing
+  if ((Get-FileHash "$out.part" -Algorithm SHA256).Hash -ne $sha.ToUpper()) {
+    Remove-Item "$out.part"; Write-Host "SECURITY: $out failed its integrity check and was deleted. Try again later."; exit 1
+  }
+  Move-Item -Force "$out.part" $out
+}
 $arm = $env:PROCESSOR_ARCHITECTURE -eq "ARM64"
-$whisperZip = if ($arm) { "https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-win-cpu-arm64.zip" }
-              else { "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip" }
 $cli = Get-ChildItem -Path bin\whisper -Recurse -Filter whisper-cli.exe -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $cli) {
-  Invoke-WebRequest $whisperZip -OutFile bin\whisper.zip
+  if ($arm) { Fetch "https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-win-cpu-arm64.zip" bin\whisper.zip "799543b926ab5b6c2d60cab269a2092e0ae8d27820e9e15429e59de3699546fc" }
+  else { Fetch "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip" bin\whisper.zip "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a" }
   Expand-Archive bin\whisper.zip -DestinationPath bin\whisper -Force
   Remove-Item bin\whisper.zip
   $cli = Get-ChildItem -Path bin\whisper -Recurse -Filter whisper-cli.exe | Select-Object -First 1
 }
 if (-not $cli) { Write-Host "Couldn't find whisper-cli.exe in the whisper.cpp download."; exit 1 }
-if (-not (Test-Path models\ggml-small.en-q5_1.bin)) {
-  Invoke-WebRequest "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin" -OutFile models\ggml-small.en-q5_1.bin
-}
-if (-not (Test-Path models\wespeaker_en_voxceleb_resnet34.onnx)) {
-  Invoke-WebRequest "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx" -OutFile models\wespeaker_en_voxceleb_resnet34.onnx
-}
+Fetch "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin" models\ggml-small.en-q5_1.bin "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
+Fetch "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx" models\wespeaker_en_voxceleb_resnet34.onnx "5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94"
 
 Step "5/7  Your name"
 $cfg = @{}
@@ -76,15 +81,9 @@ $entry = [pscustomobject]@{ command = $node; args = @((Join-Path $Dir "server.mj
 if ($conf.mcpServers.PSObject.Properties["meeting-copilot"]) { $conf.mcpServers."meeting-copilot" = $entry }
 else { $conf.mcpServers | Add-Member -NotePropertyName "meeting-copilot" -NotePropertyValue $entry }
 Write-Json $claudeCfg $conf
-if (Get-Command claude -ErrorAction SilentlyContinue) {
-  try {
-    $ErrorActionPreference = "Continue"
-    & claude mcp remove -s user meeting-copilot *> $null
-    & claude mcp add -s user meeting-copilot -- "$node" "$(Join-Path $Dir 'server.mjs')" *> $null
-    Write-Host "Also registered with Claude Code."
-  } catch { Write-Host "Skipped Claude Code registration (optional)." }
-  finally { $ErrorActionPreference = "Stop" }
-}
+# Security: the helper is registered only with the Claude desktop app (which can ask you to confirm actions),
+# not with Claude Code, so no coding session can start your microphone.
+
 
 Write-Host @"
 

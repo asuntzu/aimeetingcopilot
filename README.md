@@ -15,7 +15,9 @@ A private, on-device meeting assistant for the **Claude desktop app**. It listen
 | macOS (Apple Silicon or Intel, macOS 14.4+) | Stable | [docs/SETUP-MAC.md](docs/SETUP-MAC.md) |
 | Windows 10 / 11 (x64 or ARM64) | **Beta**: not yet confirmed on real hardware | [docs/SETUP-WINDOWS.md](docs/SETUP-WINDOWS.md) |
 
-## Privacy
+## Privacy and security
+
+See [SECURITY.md](SECURITY.md) for the full list of protections, known limits and how to report a vulnerability.
 
 - **Audio never leaves your computer and is never stored.** It's recorded in 10–30 second pieces, turned into text locally, and deleted within seconds.
 - **Your voice profile is a voiceprint** (about 200 numbers), not a recording.
