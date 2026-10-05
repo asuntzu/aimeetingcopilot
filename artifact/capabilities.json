@@ -32,11 +32,9 @@
           "save_meeting_plan",
           "meeting_for_event",
           "save_meeting_json",
-          "log_action",
           "hermes_profiles",
           "run_hermes",
-          "job_status",
-          "page_log"
+          "job_status"
         ]
       },
       {

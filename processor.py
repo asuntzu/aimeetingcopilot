@@ -325,8 +325,10 @@ class Session:
             return
         if self.capture.call_ok and not final and mic and not sys_:
             age = (dt.datetime.now() - self.t0(mic[0])).total_seconds()
-            if age < self.chunk * 3:
-                return  # wait for the matching call chunk
+            # Call audio only produces chunks while something is playing, so wait a few seconds
+            # for the matching call chunk (used to drop speaker echo), then carry on without it.
+            if age < self.chunk + 6:
+                return
         batch_mic = mic[:1]
         start = self.t0(batch_mic[0]) if batch_mic else self.t0(sys_[0])
         end = start + dt.timedelta(seconds=self.chunk + 1)

@@ -499,7 +499,7 @@ function explain(e) {
     case "server_not_connected":
       return "Can't reach the Meeting Copilot helper on your computer. Open this page in the Claude desktop app; if it's already open there, quit and reopen Claude so it loads the helper.";
     case "not_in_manifest": return "Access to the Meeting Copilot helper is turned off for this page. Turn it on from the page's Permissions menu.";
-    case "cancelled": return "Cancelled in the Claude app.";
+    case "cancelled": return "The Claude app's approval prompt was declined or closed. Press the button again and choose Allow (tick \"Always allow\" to stop being asked).";
     case "tool_error": return e.message || "The helper reported an error.";
     case "server_unavailable": return "The helper didn't answer in time. Try again.";
     default: return e?.message || "Something went wrong talking to the helper.";
@@ -561,7 +561,7 @@ async function toggleRecording() {
   try {
     if (S.status?.listening) {
       b.textContent = "Stopping…";
-      const res = await call("stop");
+      const res = await call("stop", { diag: takeDiag() });
       S.status = res;
       await pullTranscript();
       toast(res.saved ? "Stopped. Transcript saved to " + shortPath(res.saved) : "Stopped.");
@@ -917,11 +917,12 @@ async function ensureSampleAccess(userAsked) {
   } catch (e) { diag("sample_perm_error", e?.code || "error"); return true; }
 }
 // Privacy-safe diagnostics: event codes and timings only, never transcript or document text.
-const DIAG = [];
+const DIAG = [], DIAG_PENDING = [];
+const takeDiag = () => DIAG_PENDING.splice(0);
 function diag(event, detail = "") {
   const line = `${new Date().toTimeString().slice(0, 8)} ${event}${detail ? " " + String(detail).replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, 40) : ""}`;
   DIAG.push(line); if (DIAG.length > 200) DIAG.shift();
-  if (S.mcp) call("page_log", { line }).catch(() => {});
+  DIAG_PENDING.push(line); if (DIAG_PENDING.length > 200) DIAG_PENDING.shift();
 }
 function setAiState(text, kind = "") { const s = $("aiState"); s.textContent = text; s.className = "state " + kind; }
 
@@ -1561,10 +1562,13 @@ function normalizeItems(raw) {
 async function loadHermes() {
   try { A.hermes = await call("hermes_profiles"); } catch { A.hermes = { available: false, profiles: [] }; }
 }
+const LOG_PENDING = [];
 async function persistItems() {
-  try { await call("save_meeting_json", { kind: "Action items", prefix: A.prefix || undefined, data: { meeting: A.meeting, updated: new Date().toISOString(), items: A.items.map(({ selected, ...x }) => x) } }); } catch {}
+  const log = LOG_PENDING.splice(0);
+  try { await call("save_meeting_json", { kind: "Action items", prefix: A.prefix || undefined, log, diag: takeDiag(), data: { meeting: A.meeting, updated: new Date().toISOString(), items: A.items.map(({ selected, ...x }) => x) } }); }
+  catch (e) { LOG_PENDING.unshift(...log); if (e?.code === "cancelled") toast("The action log wasn't saved because the save was declined."); }
 }
-const logA = (line) => call("log_action", { line, prefix: A.prefix || undefined }).catch(() => {});
+const logA = (line) => { LOG_PENDING.push(String(line).slice(0, 600)); };
 
 // Extract action items from a transcript (current or past meeting)
 async function extractActions(transcriptText, summaryText) {
@@ -1672,8 +1676,13 @@ async function runItem(i) {
     } else if (it.type === "proposal" || it.type === "research") {
       const tools = projectTools()?.filter((x) => x.name === "find_context" || x.name === "read_project_file");
       const r = await S.sample(`${SAFE_RULES}\n\n${it.type === "proposal" ? "Write the document" : "Do the research"} for this action item from ${hostName()}'s meeting.\nACTION ITEM: ${it.text}\nWHAT TO DO: ${it.plan}\n${tools ? "Use find_context to pull facts from the meeting folder documents and cite file names.\n" : ""}\n${meetingContext()}\n\nWrite the finished result in Markdown, ready to use.`, tools ? { modelTier: "default", tools } : { modelTier: "default", cache: false });
-      const res = await call("save_notes", { markdown: `# ${it.text}\n\n${r.text}`, kind: `${it.type === "proposal" ? "Proposal" : "Research"} - ${shortTitle(it.text)}`, prefix: A.prefix || undefined });
-      it.result = { file: res.path, text: r.text }; it.status = "done";
+      try {
+        const res = await call("save_notes", { markdown: `# ${it.text}\n\n${r.text}`, kind: `${it.type === "proposal" ? "Proposal" : "Research"} - ${shortTitle(it.text)}`, prefix: A.prefix || undefined });
+        it.result = { file: res.path, text: r.text };
+      } catch (e) {
+        it.result = { text: r.text, error: e?.code === "cancelled" ? "Finished, but not saved to the folder because the save was declined. Copy it from the preview, or press Start again and choose Allow." : "Finished, but saving failed: " + explain(e) };
+      }
+      it.status = "done";
     } else if (it.type === "schedule") {
       $("actVeil").hidden = true;
       await openSchedule();

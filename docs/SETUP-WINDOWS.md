@@ -142,6 +142,10 @@ Open the Claude app on your phone → **Artifacts** → **Meeting Copilot** whil
 **Hermes tasks fail or never finish**
 - Check that Hermes works on its own in a terminal, then try again. Each task has a 15-minute limit; results also appear in the meeting folder when they finish.
 
+**The Claude app keeps asking me to approve actions, or an action says it was declined**
+- The first time the copilot saves a file, starts recording or runs an action, the Claude app asks you to approve it. Choose **Allow** and tick **Always allow** for Meeting Copilot so it stops asking.
+- If a prompt was closed or declined, press the button again and choose Allow. Research and proposals that finished but weren't saved keep their text in the card's preview.
+
 **"AI notes are off"**
 - The page wasn't allowed to use Claude. Reload it and choose **Allow** when asked, or open the page's **Permissions** menu.
 

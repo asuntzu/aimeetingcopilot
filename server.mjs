@@ -469,6 +469,12 @@ function hermesProfiles() {
 }
 const JOBS = new Map();
 const JOBDIR = path.join(LIVE, "jobs");
+function appendDiag(lines) {
+  if (!Array.isArray(lines) || !lines.length) return;
+  const f = path.join(LIVE, "page.log");
+  try { if (fs.statSync(f).size > 200_000) fs.renameSync(f, f + ".old"); } catch {}
+  fs.appendFileSync(f, lines.slice(-200).map((l) => String(l).replace(/[^\x20-\x7E]/g, " ").slice(0, 120)).join("\n") + "\n");
+}
 function logAction(line, prefix = null) {
   saveOutput("Action log", `- ${new Date().toLocaleString("sv-SE").slice(0, 19)}  ${String(line).replace(/[\r\n]+/g, " ").slice(0, 600)}\n`, { append: true, prefix });
 }
@@ -522,8 +528,9 @@ const tools = {
   },
   stop: {
     description: "Stop recording; the transcript is archived.",
-    schema: { type: "object", properties: {} },
-    run: async () => {
+    schema: { type: "object", properties: { diag: { type: "array", items: { type: "string" } } } },
+    run: async ({ diag } = {}) => {
+      appendDiag(diag);
       const p = pid();
       if (p) {
         fs.writeFileSync(STOPFLAG, "stop");
@@ -561,8 +568,10 @@ const tools = {
   // ---------- Action items ----------
   save_meeting_json: {
     description: "Save structured meeting data (kind: 'Action items') as JSON next to the meeting's other files.",
-    schema: { type: "object", properties: { kind: { type: "string" }, data: {}, prefix: { type: "string" } }, required: ["kind", "data"] },
-    run: ({ kind, data, prefix }) => {
+    schema: { type: "object", properties: { kind: { type: "string" }, data: {}, prefix: { type: "string" }, log: { type: "array", items: { type: "string" } }, diag: { type: "array", items: { type: "string" } } }, required: ["kind", "data"] },
+    run: ({ kind, data, prefix, log, diag }) => {
+      for (const line of (Array.isArray(log) ? log : []).slice(0, 50)) logAction(line, prefix);
+      appendDiag(diag);
       if (!/^(Action items)$/.test(String(kind))) throw new Error("Unsupported kind.");
       const text = JSON.stringify(data ?? null, null, 2);
       if (text.length > 1_000_000) throw new Error("Too large.");
