@@ -63,6 +63,8 @@ The page lives in your own Claude account, so each person publishes their own co
 
 To invite people and send briefings from the copilot, turn on the **Google Calendar** and **Gmail** connectors in claude.ai → **Settings → Connectors** (sign in with the Google account you want to send from). The first time you click **Schedule**, allow the page to use them. See [SCHEDULING.md](SCHEDULING.md).
 
+At the end of a meeting, the **Action plan** lets AI do your follow-up. To also use [Hermes Agent](https://github.com/NousResearch/hermes-agent), list the allowed profiles in `config.json` (see [ACTION-ITEMS.md](ACTION-ITEMS.md#hermes-agent-optional)) and restart Claude.
+
 ## 7. Phone companion (optional)
 
 Open the Claude app on your phone → **Artifacts** → **Meeting Copilot** while the page is open on your Mac. The phone shows **Connected to your computer** and the live notes.
@@ -107,6 +109,12 @@ Open the Claude app on your phone → **Artifacts** → **Meeting Copilot** whil
 
 **The invite went out but the briefing email didn't appear**
 - Click **Try the draft again** in the Schedule window. The draft is in Gmail under **Drafts**; nothing is emailed until you press Send there.
+
+**An action item says "That Hermes profile isn't allowed"**
+- Add the profile name to `"hermesProfiles"` in `config.json`, make sure it isn't in `"hermesBlocked"`, and restart Claude.
+
+**Hermes tasks fail or never finish**
+- Check that Hermes works on its own in a terminal, then try again. Each task has a 15-minute limit; results also appear in the meeting folder when they finish.
 
 **"AI notes are off"**
 - The page wasn't allowed to use Claude. Reload it and choose **Allow** when asked, or open the page's **Permissions** menu.

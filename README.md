@@ -10,6 +10,7 @@ A private, on-device meeting assistant for the **Claude desktop app**. It listen
 - **Wrap up**: a summary, action items and a draft follow-up email, saved into your meeting folder with the transcript.
 - **Phone companion**: open the same page on your phone to see the notes and control the meeting from it.
 - **Scheduling and briefings**: invite people with a Google Calendar invitation and Google Meet link, get an AI-written attendee briefing and a private prep brief, and send a briefing email (as a Gmail draft you review) that shows the time in each attendee's time zone, with buttons to add the meeting to Google Calendar, Outlook, Microsoft 365, Apple Calendar or any other calendar. [How it works](docs/SCHEDULING.md)
+- **AI does your follow-up**: after the meeting, an Action plan lists every action item and, when you press Start, Claude (or optionally [Hermes Agent](https://github.com/NousResearch/hermes-agent)) drafts the follow-up emails, writes proposals, does the research and sets up the next meeting. A group summary email lists everyone's action items, and **Did we miss anything?** checks past meetings for loose ends. [How it works](docs/ACTION-ITEMS.md)
 
 | Version | Status | Setup guide |
 |---|---|---|
@@ -18,7 +19,7 @@ A private, on-device meeting assistant for the **Claude desktop app**. It listen
 
 ## Privacy and security
 
-See [SECURITY.md](SECURITY.md) for the full list of protections, known limits and how to report a vulnerability. Latest reviews: [October 4, 2026](docs/SECURITY-REVIEW-2026-10-04.md) and [Scheduling feature](docs/SECURITY-REVIEW-2026-10-04-SCHEDULING.md).
+See [SECURITY.md](SECURITY.md) for the full list of protections, known limits and how to report a vulnerability. Latest reviews: [October 4, 2026](docs/SECURITY-REVIEW-2026-10-04.md) and [Scheduling feature](docs/SECURITY-REVIEW-2026-10-04-SCHEDULING.md), [AI action items](docs/SECURITY-REVIEW-2026-10-04-ACTIONS.md).
 
 - **Audio never leaves your computer and is never stored.** It's recorded in 10–30 second pieces, turned into text locally, and deleted within seconds.
 - **Your voice profile is a voiceprint** (about 200 numbers), not a recording.
@@ -56,7 +57,7 @@ Phone: open the same page → companion view, linked live to the computer
 2. Open **Meeting Copilot** from Artifacts in the Claude app. For a meeting already on your calendar, click **Today** to load it.
 3. Click **File** and choose the folder, type the meeting name, then press **Start**.
 4. Watch the Copilot panel, or open the page on your phone.
-5. Press **Wrap up meeting** at the end. The transcript, summary and live notes are saved into the folder.
+5. Press **Wrap up meeting** at the end. The transcript, summary and live notes are saved into the folder, and the **Action plan** opens so AI can do your follow-up when you press Start ([guide](docs/ACTION-ITEMS.md)).
 6. Press **New meeting** to clear everything for the next one.
 
 ## License

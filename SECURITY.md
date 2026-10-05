@@ -6,6 +6,7 @@ AI Meeting Copilot handles sensitive material: live conversations, a voiceprint,
 
 - [October 4, 2026](docs/SECURITY-REVIEW-2026-10-04.md): 1 serious and 9 smaller issues found and fixed.
 - [October 4, 2026, scheduling feature](docs/SECURITY-REVIEW-2026-10-04-SCHEDULING.md): reviewed and attack-tested before release.
+- [October 4, 2026, AI action items](docs/SECURITY-REVIEW-2026-10-04-ACTIONS.md): reviewed and attack-tested before release.
 
 ## Reporting a vulnerability
 
@@ -27,6 +28,8 @@ Please **don't open a public issue** for security problems. Use GitHub's private
 | **Phone companion** | Live updates travel only between your own signed-in devices; nothing is stored online. Commands from the phone are accepted only from your own account, and folder changes only to folders the computer offered. If anyone else opens the page (for example, if you shared it), the computer stops sending meeting content until they leave. |
 | **Helper exposure** | The installer registers the helper only with the Claude desktop app, not with Claude Code, so coding sessions can't start your microphone. |
 | **Scheduling (Google Calendar, Gmail)** | The page may only create calendar events, read your calendar and create Gmail **drafts**. It can't send email. Calendar invites go out only after a two-step confirmation. Everything placed in invites, emails and the attached `.ics` file is escaped or encoded (no AI-supplied HTML or links, no injected calendar lines), and only verified `https://meet.google.com` and Google links are used. The attendee briefing is kept separate from the private prep brief and must be reviewed before sending. The address book (`contacts.json`) is validated, stored only on your computer with private permissions, and never sent to the phone companion. |
+| **AI action items** | Nothing runs without your click (batches need a second confirmation). Only the host's own items are actionable, and only four action types exist: Gmail draft, document in the meeting folder, research, and a scheduling form you confirm; anything else is track-only. Items mentioning credentials, payments, deleting, logins or commands are flagged and can't run in a batch. Every action is logged to the meeting folder; log lines can't be forged. The phone companion can't start actions. |
+| **Hermes Agent (optional)** | Only profiles listed in `config.json` → `hermesProfiles` can be used, and `hermesBlocked` always wins. Tasks run in one-shot mode with research-only toolsets (`web,todo,session_search`), a 15-minute budget, a step limit, at most two at a time, inside an empty temporary folder, never with approval bypass. The task is passed on standard input (never as command-line arguments), with rules forbidding sending, paying, trading or changing anything. |
 | **Supply chain** | Downloaded models and the Windows whisper.cpp build are verified against SHA-256 fingerprints before use; Python dependencies are pinned to exact tested versions. |
 
 ## Known limits
