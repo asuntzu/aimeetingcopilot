@@ -565,6 +565,18 @@ const tools = {
       return { ok: true };
     },
   },
+  save_wrapup: {
+    description: "Save the end-of-meeting files in one step: summary, live notes and action items, into the meeting folder (and archive).",
+    schema: { type: "object", properties: { summary: { type: "string" }, liveNotes: { type: "string" }, actionItems: {}, diag: { type: "array", items: { type: "string" } } }, required: ["summary"] },
+    run: ({ summary, liveNotes, actionItems, diag }) => {
+      appendDiag(diag);
+      const cap = (t) => String(t || "").slice(0, 2_000_000);
+      const out = { summary: saveOutput("Summary", cap(summary)), liveNotes: saveOutput("Live notes", cap(liveNotes)) };
+      if (actionItems) out.actionItems = saveOutput("Action items", JSON.stringify(actionItems, null, 2).slice(0, 1_000_000), { ext: ".json" });
+      logAction("Meeting wrapped up: summary, live notes and action items saved");
+      return out;
+    },
+  },
   // ---------- Action items ----------
   save_meeting_json: {
     description: "Save structured meeting data (kind: 'Action items') as JSON next to the meeting's other files.",

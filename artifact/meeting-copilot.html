@@ -430,9 +430,10 @@ button { cursor: pointer; }
         <div class="row">
           <label for="chunk" style="margin:0;text-transform:none;letter-spacing:0;font:14px var(--body);color:var(--ink)">Update every</label>
           <select id="chunk" style="border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:6px 8px">
-            <option value="15">15 s (faster, rougher)</option>
-            <option value="20" selected>20 s</option>
-            <option value="30">30 s (most accurate)</option>
+            <option value="10" selected>10 s (fastest)</option>
+            <option value="15">15 s</option>
+            <option value="20">20 s</option>
+            <option value="30">30 s (fewer, longer lines)</option>
           </select>
         </div>
       </div>
@@ -607,7 +608,7 @@ setInterval(async () => {
     if (!S.lastDiag || Date.now() - S.lastDiag > 30000) { S.lastDiag = Date.now(); diag("tick", `lines${S.lines.length}-done${S.analyzedTo}-busy${S.busy ? 1 : 0}-off${S.aiOff ? 1 : 0}-auto${S.auto ? 1 : 0}-sample${S.sample ? 1 : 0}`); }
   } catch (e) { if (e?.code === "server_not_connected") showBanner(esc(explain(e))); }
   polling = false;
-}, 6000);
+}, 3000);
 
 function markMoment() {
   if (!S.status?.listening) return;
@@ -768,7 +769,7 @@ function maybeAnalyze(force = false) {
   if (!force && !S.auto) return;
   const fresh = S.lines.length - S.analyzedTo;
   if (fresh <= 0) return;
-  if (force || fresh >= 3 || Date.now() - S.lastAnalyzeAt > 50000) analyze();
+  if (force || fresh >= 2 || Date.now() - S.lastAnalyzeAt > 12000) analyze();
 }
 
 // Wrapper: whatever happens inside, the busy flag is always released, and a watchdog cancels
@@ -1005,15 +1006,19 @@ ${context(600)}
 LIVE NOTES CAPTURED DURING THE CALL:
 ${JSON.stringify(S.insights)}
 
-Sections, in order: "# <meeting name> — <today's date>", "## Summary" (4-6 sentences), "## Decisions", "## Action items" (a checklist: owner — task — due date, "TBD" when not stated), "## Open questions", "## Flagged moments" (only if any), ${S.project.paths.length ? `"## Relevant project facts" (from the linked project, with file names), ` : ""}"## Follow-up email" (a short, ready-to-send draft from the user to the attendees). Mark uncertain names or numbers with (?). No preamble.`;
+Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.
+Sections, in order: "# ${($("meetingName").value || "Meeting").replace(/[`$\\]/g, "")} — ${new Date().toLocaleDateString("sv-SE")}", "## Summary" (4-6 sentences), "## Decisions", "## Action items" (a checklist: owner — task — due date, "TBD" when not stated), "## Open questions", "## Flagged moments" (only if any), ${S.project.paths.length ? `"## Relevant project facts" (from the linked project, with file names), ` : ""}"## Follow-up email" (a short, ready-to-send draft from the user to the attendees). Mark uncertain names or numbers with (?). No preamble.`;
     const opts = { modelTier: "default", onText: ({ text }) => { $("docBody").textContent = text; } };
     const tools = projectTools();
     if (tools) opts.tools = tools; else opts.cache = false;
     const r = await S.sample(prompt, opts);
     openDoc("Meeting summary", r.text, { kind: "Summary" });
-    await saveWrapUp(r.text);
     S.lastSummary = r.text;
-    planFromCurrentMeeting(r.text);
+    b.textContent = "Listing action items…";
+    let items = [];
+    try { A.meeting = $("meetingName").value || "Meeting"; A.prefix = null; await loadHermes(); items = await extractActions(S.lines.map((l) => `[${l.t}] ${l.text}`).join("\n"), r.text); } catch {}
+    await saveWrapUp(r.text, items);
+    if (items.length) await openActionPlan({ items, meeting: A.meeting, summary: r.text });
   } catch (e) {
     openDoc("Meeting summary", e?.text || "Couldn't write the summary. Try Wrap up again.", e?.text ? { kind: "Summary" } : null);
   } finally { b.disabled = false; b.textContent = "Wrap up meeting"; }
@@ -1034,13 +1039,14 @@ function liveNotesMarkdown() {
   list("Flagged moments", S.marks.map((m) => m.t));
   return L.join("\n");
 }
-async function saveWrapUp(summary) {
+async function saveWrapUp(summary, items = []) {
   try {
-    const a = await call("save_notes", { markdown: summary, kind: "Summary" });
-    await call("save_notes", { markdown: liveNotesMarkdown(), kind: "Live notes" });
+    // One call = one approval prompt in the Claude app (choose "Always allow" to skip it next time)
+    const a = await call("save_wrapup", { summary, liveNotes: liveNotesMarkdown(), diag: takeDiag(),
+      actionItems: items.length ? { meeting: $("meetingName").value || "Meeting", updated: new Date().toISOString(), items: items.map(({ selected, ...x }) => x) } : undefined });
     $("docSave").hidden = true;
     S.wrapped = true;
-    toast("Summary and live notes saved to " + shortPath(a.path.replace(/\/[^/]+$/, "")));
+    toast("Summary, live notes and action items saved to " + shortPath(String(a.summary || "").replace(/\/[^/]+$/, "")));
   } catch (e) { toast("Couldn't save automatically: " + explain(e) + " Use Save to folder."); }
 }
 function openDoc(title, text, saveAs) {
@@ -2035,7 +2041,8 @@ function renderComp() {
 
 // ---------- Boot ----------
 $("meetingName").value = store.get("name", "");
-$("chunk").value = store.get("chunk", "20");
+if (!store.get("chunkMigrated", false)) { store.set("chunk", "10"); store.set("chunkMigrated", true); }
+$("chunk").value = store.get("chunk", "10");
 S.agenda = store.get("agenda", "");
 $("agenda").value = S.agenda;
 renderTranscript(); renderInsights(); renderChat(); renderBar();

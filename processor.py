@@ -113,11 +113,28 @@ def embed(a):
     return e / (np.linalg.norm(e) or 1)
 
 
+def level(path):
+    """Raise quiet chunks (distant voices) toward a normal level before transcription; never above 8x."""
+    try:
+        with wave.open(path) as w:
+            params, raw = w.getparams(), w.readframes(w.getnframes())
+        a = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+        pk = float(np.max(np.abs(a))) if a.size else 0.0
+        if 100 < pk < 20000:
+            a = np.clip(a * min(8.0, 23000.0 / pk), -32767, 32767)
+            with wave.open(path, "wb") as w:
+                w.setparams(params)
+                w.writeframes(a.astype(np.int16).tobytes())
+    except Exception:
+        pass
+
+
 def whisper(path):
     """Return [(start_s, end_s, text)] segments."""
+    level(path)
     base = path[:-4]
     flags = subprocess.CREATE_NO_WINDOW if IS_WIN else 0
-    subprocess.run([WHISPER_CLI, "-m", WHISPER_MODEL, "-f", path, "-oj", "-of", base, "-np", "-nt"],
+    subprocess.run([WHISPER_CLI, "-m", WHISPER_MODEL, "-f", path, "-oj", "-of", base, "-np", "-nt", "-nth", "0.9"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
     segs = []
     try:
@@ -136,6 +153,8 @@ def whisper(path):
             os.remove(base + ".json")
         except OSError:
             pass
+    words = sum(len(t.split()) for _, _, t in segs)
+    print(f"chunk {os.path.basename(path)[:10]}: {len(segs)} segments, {words} words", flush=True)
     return segs
 
 
@@ -327,7 +346,9 @@ class Session:
             age = (dt.datetime.now() - self.t0(mic[0])).total_seconds()
             # Call audio only produces chunks while something is playing, so wait a few seconds
             # for the matching call chunk (used to drop speaker echo), then carry on without it.
-            if age < self.chunk + 6:
+            # Only wait if call audio is actually flowing (a call chunk is being written right now).
+            call_active = any(f.startswith("sys_") for f in os.listdir(CHUNKS))
+            if call_active and age < self.chunk + 4:
                 return
         batch_mic = mic[:1]
         start = self.t0(batch_mic[0]) if batch_mic else self.t0(sys_[0])
