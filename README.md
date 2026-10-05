@@ -6,7 +6,7 @@ A private, on-device meeting assistant for the **Claude desktop app**. It listen
 - **Say next**: the single most useful thing to say or ask right now.
 - **Context from your documents**: choose a folder of background material (PDF, Word, notes) and the copilot briefs you on what those documents say about the topic being discussed, with the source file for each point.
 - **Questions to raise, action items, decisions and notes**, updated as the conversation moves.
-- **Ask**: type a question mid-meeting ("What did we quote them last time?") and get an answer from the transcript and your files.
+- **Ask**: a live list of **questions to ask now**, based on what was just said (mark one **Asked** and the next suggestions build on the answer, or tap **Follow-up** for how to dig deeper), plus a box to ask anything mid-meeting ("What did we quote them last time?") answered from the transcript and your files.
 - **Wrap up**: a summary, action items and a draft follow-up email, saved into your meeting folder with the transcript.
 - **Phone companion**: open the same page on your phone to see the notes and control the meeting from it.
 - **Scheduling and briefings**: invite people with a Google Calendar invitation and Google Meet link, get an AI-written attendee briefing and a private prep brief, and send a briefing email (as a Gmail draft you review) that shows the time in each attendee's time zone, with buttons to add the meeting to Google Calendar, Outlook, Microsoft 365, Apple Calendar or any other calendar. [How it works](docs/SCHEDULING.md)

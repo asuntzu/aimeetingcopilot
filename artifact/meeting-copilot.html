@@ -84,6 +84,13 @@ button { cursor: pointer; }
 .spk-edit { padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--sunk); }
 .spk-edit label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .spk-edit input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 8px; }
+.askqs { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--amber-bg); max-height: 45%; overflow-y: auto; }
+.askqs h3 { margin: 0 0 6px; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--amber); }
+.askqs ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.askqs li { display: grid; gap: 4px; padding: 8px 10px; border-radius: 8px; background: var(--panel); overflow-wrap: anywhere; }
+.askqs li.fresh { box-shadow: inset 3px 0 0 var(--amber); }
+.askqs li .q { font-weight: 600; }
+.askqs li .row { gap: 6px; }
 .line.mark p { color: var(--amber); font-weight: 600; }
 @keyframes fadein { from { background: var(--accent-bg); } }
 .empty { color: var(--muted); padding: 24px 8px; text-align: center; text-wrap: balance; }
@@ -287,6 +294,10 @@ button { cursor: pointer; }
 
     <section class="pane" id="aPane">
       <header><h2>Ask</h2><span class="sub" id="askScope">Transcript + project</span></header>
+      <div class="askqs" id="askQs" hidden>
+        <h3>Questions to ask now</h3>
+        <ul id="askQList"></ul>
+      </div>
       <div class="scroll"><div class="chat" id="chat"></div></div>
       <div class="quick" id="quick">
         <button data-q="What should I ask next, given what was just said?">What should I ask next?</button>
@@ -436,7 +447,7 @@ button { cursor: pointer; }
           <div class="row"><span class="timer" id="voiceTimer">30</span><span class="hint" style="margin:0">seconds left</span></div>
         </div>
         <div class="row"><button class="btn" id="voiceBtn">Record my voice (30 s)</button></div>
-        <p class="hint">The transcript uses this to label your lines with your name and to ignore the call echoing through your speakers. Only a voiceprint is saved, never the recording.</p>
+        <p class="hint"><b>Record it where you usually meet</b>: same microphone, same distance, same room. A profile recorded somewhere else can make the copilot mistake you for a guest. The copilot also learns how you sound during each meeting. Only a voiceprint is saved, never the recording.</p>
       </div>
       <div class="field">
         <span class="lbl">Transcription</span>
@@ -584,7 +595,7 @@ async function toggleRecording() {
       const name = $("meetingName").value.trim() || "Meeting";
       $("meetingName").value = name;
       b.textContent = "Starting…";
-      S.wrapped = false; S.shown = {}; S.speakers = null; renderSpeakers(); S.lines = []; S.marks = []; S.insights = emptyInsights(); S.contextLog = []; store.set("contextLog", []); S.analyzedTo = 0; S.chat = [];
+      S.wrapped = false; S.asked = []; S.shown = {}; S.speakers = null; renderSpeakers(); S.lines = []; S.marks = []; S.insights = emptyInsights(); S.contextLog = []; store.set("contextLog", []); S.analyzedTo = 0; S.chat = [];
       renderTranscript(); renderInsights(); renderChat();
       S.aiOff = false; S.pausedUntil = 0; S.busy = false; S.analyzeCtl?.abort(); S.analyzeCtl = null; S.lastAnalyzeAt = 0;
       ensureSampleAccess(false);
@@ -876,7 +887,7 @@ ${context(80)}
 NEW SINCE YOUR LAST UPDATE:
 ${newLines || "(none)"}
 
-YOUR PREVIOUS STATE (JSON):
+${S.asked?.length ? `QUESTIONS THE USER ALREADY ASKED (do not suggest these again; build on the answers instead):\n${S.asked.slice(-15).map((q) => "- " + q).join("\n")}\n\n` : ""}YOUR PREVIOUS STATE (JSON):
 ${JSON.stringify(prev)}
 
 ${hasFiles ? `DOCUMENT EXCERPTS from the user's meeting folder, retrieved for what is being discussed now:
@@ -888,7 +899,7 @@ Reply with ONLY a JSON object of this shape, updating the previous state:
 {"topic": "what is being discussed right now, max 10 words",
  "nudge": "the single most useful thing for the user to say or ask right now, max 22 words, or empty string",
  "context": {"title": "what this background is about, max 6 words", "points": [{"text": "one piece of context from the documents, max 30 words", "source": "file name"}]},
- "questions": ["sharp questions the user could raise about the current topic; max 4"],
+ "questions": ["3-4 questions the user could ask next, based on what was just said: specific to the names, numbers, claims and open points in the latest lines, never generic"],
  "actions": [{"who": "", "what": "", "when": ""}],
  "decisions": ["decisions made"],
  "notes": ["key points, numbers, names so far; max 8, newest last, each under 20 words"],
@@ -982,7 +993,23 @@ function diag(event, detail = "") {
 }
 function setAiState(text, kind = "") { const s = $("aiState"); s.textContent = text; s.className = "state " + kind; }
 
+// Ask panel: live questions to ask, from the same notes update (no extra AI calls)
+function renderAskQuestions() {
+  const asked = new Set((S.asked || []).map((q) => q.toLowerCase()));
+  const qs = (S.insights?.questions || []).filter((q) => !asked.has(q.toLowerCase()));
+  $("askQs").hidden = !qs.length;
+  $("askQList").innerHTML = qs.map((q, i) => `<li${S.freshKeys?.has(q) ? ' class="fresh"' : ""}><span class="q">${esc(q)}</span>
+    <span class="row"><button class="btn sm" data-asked="${i}">Asked</button><button class="btn ghost sm" data-follow="${i}">Follow-up</button></span></li>`).join("");
+  S.askQs = qs;
+}
+$("askQList").addEventListener("click", (e) => {
+  const a = e.target.closest("[data-asked]")?.dataset.asked, f = e.target.closest("[data-follow]")?.dataset.follow;
+  if (a != null && S.askQs?.[+a]) { (S.asked ||= []).push(S.askQs[+a]); renderAskQuestions(); toast("Marked as asked. New suggestions will build on the answer."); }
+  if (f != null && S.askQs?.[+f]) ask(`I'm asking: "${S.askQs[+f]}". What should I listen for in the answer, and what's a strong follow-up question?`);
+});
+
 function renderInsights() {
+  renderAskQuestions();
   Link.dirty();
   const i = S.insights;
   const el = $("insights");
@@ -1136,7 +1163,7 @@ async function newMeeting(confirmed = false) {
   } catch (e) { toast(explain(e)); b.disabled = false; b.textContent = "New meeting"; return; }
   S.gen++;
   Object.assign(S, {
-    lines: [], marks: [], insights: emptyInsights(), contextLog: [], freshKeys: new Set(), analyzedTo: 0, busy: false,
+    lines: [], marks: [], asked: [], insights: emptyInsights(), contextLog: [], freshKeys: new Set(), analyzedTo: 0, busy: false,
     chat: [], agenda: "", overview: "", project: { name: "", paths: [] }, wrapped: false, doc: null, callWarned: false, attendees: [],
   });
   resetSchedule();

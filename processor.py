@@ -314,6 +314,9 @@ class SpeakerBook:
     def __init__(self, host_vec):
         self.host = host_vec
         self.guests = []  # {"label", "vec" (running sum), "n"}
+        self.host_live = None  # running sum of embeddings of confident host phrases (how the host sounds today)
+        self.host_n = 0
+        self.unknown = []      # unfamiliar phrases not yet attributed to anyone (a new guest needs real evidence)
         self.last = HOST if host_vec is None else None
         self._write({"names": {}, "guests": []})
 
@@ -352,25 +355,75 @@ class SpeakerBook:
         for g in self.guests:
             c = g["vec"] / (np.linalg.norm(g["vec"]) or 1)
             cands.append((float(e @ c), g["label"]))
-        host_sim = cands[0][0] if (cands and self.host is not None) else -1.0
+        prof = cands[0][0] if (cands and self.host is not None) else -1.0
+        live = float(e @ (self.host_live / (np.linalg.norm(self.host_live) or 1))) if self.host_live is not None else -1.0
+        host_sim = max(prof, live)
         guests = [c for c in cands if c[1] != HOST or self.host is None]
         g_best, g_label = max(guests) if guests else (-1.0, None)
-        log(f"voice {dur:.1f}s host={host_sim:.2f} guest={g_label}:{g_best:.2f}")
-        if self.host is not None and host_sim >= self.HOST_MIN and host_sim >= g_best + 0.03:
+        log(f"voice {dur:.1f}s host={prof:.2f}/live={live:.2f} guest={g_label}:{g_best:.2f}")
+        # Decide mainly on how the host sounds today once that's learned; fall back to the stored voiceprint early on.
+        learned = self.host_live is not None and self.host_n >= 2
+        if self.host is None:
+            is_host, is_other = False, True
+        elif learned:
+            is_host = live >= 0.80 or (prof >= 0.72 and live >= 0.74)
+            is_other = live < 0.74 and prof < 0.70
+        else:
+            is_host = prof >= self.HOST_MIN
+            is_other = prof < self.HOST_MIN - 0.15
+        if is_host and host_sim >= g_best - 0.02:
             chosen = HOST
-        elif g_label and g_best >= self.SAME_MIN and g_best >= host_sim:
+        elif g_label and g_best >= self.SAME_MIN and g_best > host_sim:
             chosen = g_label
             g = next(g for g in self.guests if g["label"] == g_label)
             if g["n"] < 30:
                 g["vec"] += e; g["n"] += 1
+            self._maybe_merge(g)
         elif call_active:
             return None  # likely the call echoing through the speakers, not someone in the room
-        elif self.host is not None and host_sim >= self.HOST_MIN - 0.08:
-            chosen = self.last or HOST  # too close to call: keep the previous speaker
+        elif not is_other or dur < 1.5:
+            chosen = self.last or HOST  # not clearly someone new: keep the previous speaker
         else:
-            chosen = self._new_guest(e)
+            # A new person needs evidence: one long phrase, or two phrases that sound alike
+            self.unknown.append(e)
+            twins = [u for u in self.unknown[:-1] if float(u @ e) >= 0.60]
+            if dur >= 2.5 or twins or self.host is None:
+                chosen = self._new_guest(e if not twins else (e + sum(twins)))
+                self.unknown = [u for u in self.unknown if u is not e and not any(u is t for t in twins)]
+            else:
+                chosen = self.last or HOST
+        if chosen != HOST and chosen in [g["label"] for g in self.guests]:
+            pass
+        if chosen == HOST:
+            # learn how the host sounds today from clearly-matching phrases
+            if (prof >= 0.72 or live >= 0.80) and self.host_n < 60:
+                self.host_live = e.copy() if self.host_live is None else self.host_live + e
+                self.host_n += 1
+            for g in list(self.guests):
+                if g["label"] != HOST:
+                    self._maybe_merge(g)
         self.last = chosen
         return chosen
+
+    def _maybe_merge(self, g):
+        """A 'guest' that sounds like the host today is the host: fold it back in and relabel its lines."""
+        if self.host_live is None or g["label"] == HOST or g.get("merged"):
+            return
+        gv = g["vec"] / (np.linalg.norm(g["vec"]) or 1)
+        hv = self.host_live / (np.linalg.norm(self.host_live) or 1)
+        sim = float(gv @ hv)
+        if sim >= 0.72:
+            g["merged"] = True
+            log(f"merge {g['label']} into host ({sim:.2f})")
+            data = self._read()
+            shown = data.get("names", {}).get(g["label"], g["label"])
+            data.setdefault("names", {})[g["label"]] = HOST
+            data["guests"] = [x["label"] for x in self.guests if x["label"] != HOST and not x.get("merged")]
+            self._write(data)
+            relabel_transcript(shown, HOST)
+            self.guests = [x for x in self.guests if x is not g]
+            if self.last == g["label"]:
+                self.last = HOST
 
     def heard(self, label, text):
         """Name round: "Hi, I'm Dana" names that voice (unless the user already named it)."""
