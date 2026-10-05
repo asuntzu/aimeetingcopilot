@@ -572,6 +572,8 @@ async function toggleRecording() {
       b.textContent = "Starting…";
       S.wrapped = false; S.lines = []; S.marks = []; S.insights = emptyInsights(); S.contextLog = []; store.set("contextLog", []); S.analyzedTo = 0; S.chat = [];
       renderTranscript(); renderInsights(); renderChat();
+      S.aiOff = false; S.pausedUntil = 0; S.busy = false; S.analyzeCtl?.abort(); S.analyzeCtl = null; S.lastAnalyzeAt = 0;
+      ensureSampleAccess(false);
       S.status = await call("start", { name, chunkSeconds: Number($("chunk").value) });
       for (let i = 0; i < 30 && !S.status.listening && !S.status.error; i++) {
         showBanner(S.status?.platform === "windows" ? "<strong>Starting the recorder…</strong>" : "<strong>Waiting for microphone permission.</strong> If macOS asks whether <b>AI Meeting Copilot Recorder</b> can use the microphone, click Allow.");
@@ -600,7 +602,10 @@ let polling = false;
 setInterval(async () => {
   if (polling || !S.mcp || !S.status?.listening) return;
   polling = true;
-  try { S.status = await call("status"); renderBar(); await pullTranscript(); maybeAnalyze(); } catch (e) { if (e?.code === "server_not_connected") showBanner(esc(explain(e))); }
+  try {
+    S.status = await call("status"); renderBar(); await pullTranscript(); maybeAnalyze();
+    if (!S.lastDiag || Date.now() - S.lastDiag > 30000) { S.lastDiag = Date.now(); diag("tick", `lines${S.lines.length}-done${S.analyzedTo}-busy${S.busy ? 1 : 0}-off${S.aiOff ? 1 : 0}-auto${S.auto ? 1 : 0}-sample${S.sample ? 1 : 0}`); }
+  } catch (e) { if (e?.code === "server_not_connected") showBanner(esc(explain(e))); }
   polling = false;
 }, 6000);
 
@@ -766,9 +771,32 @@ function maybeAnalyze(force = false) {
   if (force || fresh >= 3 || Date.now() - S.lastAnalyzeAt > 50000) analyze();
 }
 
+// Wrapper: whatever happens inside, the busy flag is always released, and a watchdog cancels
+// any update that takes too long, so live notes can never freeze for a whole meeting.
 async function analyze() {
   if (!S.sample || S.busy) return;
-  S.busy = true;
+  const ctl = new AbortController();
+  S.busy = true; S.busySince = Date.now(); S.analyzeCtl = ctl;
+  diag("notes_start");
+  try { await analyzeInner(ctl.signal); }
+  catch (e) { diag("notes_error", e?.code || e?.name || "exception"); setAiState("Update failed (" + (e?.code || "error") + ")", "err"); }
+  finally {
+    if (S.analyzeCtl === ctl) { S.busy = false; S.analyzeCtl = null; }
+    S.lastAnalyzeAt = Date.now();
+    renderInsights();
+  }
+}
+setInterval(() => {
+  if (S.busy && S.analyzeCtl && Date.now() - S.busySince > 75000) {
+    diag("notes_watchdog");
+    S.analyzeCtl.abort();
+    S.busy = false; S.analyzeCtl = null;
+    setAiState("Retrying…", "busy");
+    S.lastAnalyzeAt = 0; // retry on the next transcript check
+  }
+}, 5000);
+
+async function analyzeInner(signal) {
   const gen = S.gen;
   const upTo = S.lines.length;
   setAiState("Updating…", "busy");
@@ -811,8 +839,8 @@ Reply with ONLY a JSON object of this shape, updating the previous state:
  "searchTerms": ["3-6 names, companies, products, numbers or terms worth looking up in the user's documents next"]}
 Rules: 2-5 context points; keep still-relevant items, drop stale questions, never drop actions or decisions. The transcript has transcription errors; infer obvious mishearings and mark uncertain names or numbers with (?).`;
   try {
-    const r = await S.sample.json(prompt, { modelTier: "quick", cache: false });
-    if (gen !== S.gen) return;
+    const r = await S.sample.json(prompt, { modelTier: "quick", cache: false, signal });
+    if (gen !== S.gen || signal.aborted) return;
     if (r && typeof r === "object") {
       const before = new Set(keysOf(prev));
       const next = normalize(r);
@@ -827,12 +855,9 @@ Rules: 2-5 context points; keep still-relevant items, drop stale questions, neve
       store.set("insights", S.insights);
     }
     setAiState("Updated " + new Date().toTimeString().slice(0, 5));
+    diag("notes_ok");
   } catch (e) {
-    handleSampleError(e);
-  } finally {
-    S.lastAnalyzeAt = Date.now();
-    S.busy = false;
-    renderInsights();
+    if (!signal.aborted) { diag("notes_sample_error", e?.code || "unknown"); handleSampleError(e); }
   }
 }
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -855,17 +880,48 @@ function keysOf(i) {
 }
 function handleSampleError(e) {
   switch (e?.code) {
-    case "not_granted": case "sampling_disabled": case "not_declared": case "capability_disabled": case "capability_removed":
-      S.aiOff = true; setAiState("AI off", "err");
-      showBanner("<strong>AI notes are off.</strong> This page wasn't allowed to use Claude. The transcript still works; reload the page to be asked again.");
+    case "not_granted": case "sampling_disabled": case "not_declared":
+      S.aiOff = true; setAiState("AI off: no permission", "err");
+      showBanner("<strong>Live notes are off</strong> because this page isn't allowed to use Claude. The transcript still works.", `<button class="btn sm" id="aiRetry">Allow Claude</button>`);
+      document.getElementById("aiRetry")?.addEventListener("click", () => { showBanner(""); ensureSampleAccess(true); });
+      break;
+    case "capability_disabled": case "capability_removed":
+      S.aiOff = true; setAiState("AI off: update the Claude app", "err");
+      showBanner("<strong>Live notes are off.</strong> This version of the Claude app can't run them. Update the Claude app, then reload the page.");
       break;
     case "rate_limited":
-      S.pausedUntil = Date.now() + 120000; setAiState("Paused 2 min", "err"); break;
+      S.pausedUntil = Date.now() + 60000; setAiState("Paused 1 min: too many requests", "err"); break;
     case "cancelled": setAiState("Stopped"); break;
     case "invalid_json": case "empty_completion": setAiState("Skipped one update", "err"); break;
     case "session_expired": setAiState("Sign in again", "err"); break;
-    default: setAiState("Update failed", "err");
+    case "upstream_error": setAiState("Claude didn't answer; retrying", "err"); break;
+    default: setAiState("Update failed (" + (e?.code || "error") + ")", "err");
   }
+}
+// Ask for Claude permission up front (on the Start click), so the prompt never waits unseen mid-meeting.
+async function ensureSampleAccess(userAsked) {
+  if (!S.sample) { setAiState("AI off: open in the Claude app", "err"); diag("sample_missing"); return false; }
+  try {
+    const perms = window.claude?.use ? await window.claude.use("permissions") : null;
+    let st = perms ? await perms.state("sample").catch(() => "unavailable") : "unknown";
+    diag("sample_perm", st);
+    if (st === "prompt" || (userAsked && st === "denied")) {
+      setAiState("Waiting for Claude permission…", "busy");
+      st = (await perms.request(["sample"]).catch(() => ({})))?.sample || st;
+      diag("sample_perm_after", st);
+    }
+    if (st === "denied") { handleSampleError({ code: "not_granted" }); return false; }
+    S.aiOff = false;
+    setAiState(st === "granted" ? "Ready" : "Idle");
+    return true;
+  } catch (e) { diag("sample_perm_error", e?.code || "error"); return true; }
+}
+// Privacy-safe diagnostics: event codes and timings only, never transcript or document text.
+const DIAG = [];
+function diag(event, detail = "") {
+  const line = `${new Date().toTimeString().slice(0, 8)} ${event}${detail ? " " + String(detail).replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, 40) : ""}`;
+  DIAG.push(line); if (DIAG.length > 200) DIAG.shift();
+  if (S.mcp) call("page_log", { line }).catch(() => {});
 }
 function setAiState(text, kind = "") { const s = $("aiState"); s.textContent = text; s.className = "state " + kind; }
 

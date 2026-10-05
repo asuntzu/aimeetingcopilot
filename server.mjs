@@ -548,6 +548,16 @@ const tools = {
       return { ok: true, ...status() };
     },
   },
+  page_log: {
+    description: "Append a privacy-safe diagnostic event from the page (codes and counts only) to live/page.log.",
+    schema: { type: "object", properties: { line: { type: "string" } }, required: ["line"] },
+    run: ({ line }) => {
+      const f = path.join(LIVE, "page.log");
+      try { if (fs.statSync(f).size > 200_000) fs.renameSync(f, f + ".old"); } catch {}
+      fs.appendFileSync(f, String(line || "").replace(/[^\x20-\x7E]/g, " ").slice(0, 120) + "\n");
+      return { ok: true };
+    },
+  },
   // ---------- Action items ----------
   save_meeting_json: {
     description: "Save structured meeting data (kind: 'Action items') as JSON next to the meeting's other files.",
