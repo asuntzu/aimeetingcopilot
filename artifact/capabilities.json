@@ -35,7 +35,8 @@
           "hermes_profiles",
           "run_hermes",
           "job_status",
-          "save_wrapup"
+          "save_wrapup",
+          "rename_speaker"
         ]
       },
       {

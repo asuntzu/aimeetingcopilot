@@ -296,6 +296,149 @@ def enroll(seconds=30):
 
 
 # ---------- live transcription ----------
+# ---------- who is speaking (people sharing the microphone) ----------
+SPEAKERS = os.path.join(LIVE, "speakers.json")
+INTRO = re.compile(r"\b(?i:my name is|my name's|i'm|i am|this is|it's|call me)\s+([A-Z][a-z]{1,20})\b")
+NOT_NAMES = {"Here", "Good", "Sorry", "Glad", "Just", "Going", "Not", "Happy", "Fine", "Okay", "Ok", "Yeah", "Really", "Still",
+             "Trying", "Testing", "The", "So", "Sure", "Back", "Done", "Ready", "Excited", "Calling", "Speaking", "Looking",
+             "Working", "Gonna", "Great", "Well", "Thinking", "Curious", "Interested", "Coming", "Joining", "Late", "Sorry"}
+
+
+class SpeakerBook:
+    """Online voice clustering for everyone on the microphone: the host (voiceprint) plus Guest 1, Guest 2, ...
+    Names come from introductions ("I'm Dana") or from the user renaming a speaker in the page."""
+    HOST_MIN = float(CFG.get("voiceHostMin", 0.70)) if "CFG" in globals() else 0.70  # similarity to your voiceprint to count as you
+    SAME_MIN = float(CFG.get("voiceSameMin", 0.55)) if "CFG" in globals() else 0.55  # similarity to a known guest to reuse that label
+    MIN_SEC = 1.2     # shorter phrases are too short to judge; they keep the previous speaker
+
+    def __init__(self, host_vec):
+        self.host = host_vec
+        self.guests = []  # {"label", "vec" (running sum), "n"}
+        self.last = HOST if host_vec is None else None
+        self._write({"names": {}, "guests": []})
+
+    def _read(self):
+        try:
+            with open(SPEAKERS, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {"names": {}, "guests": []}
+
+    def _write(self, data):
+        with open(SPEAKERS, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+    def display(self, label):
+        return self._read().get("names", {}).get(label, label)
+
+    def _new_guest(self, vec):
+        # Without a voiceprint, the first voice heard is assumed to be the host
+        label = HOST if (self.host is None and not self.guests) else f"Guest {sum(1 for g in self.guests if g['label'] != HOST) + 1}"
+        self.guests.append({"label": label, "vec": vec.copy(), "n": 1})
+        data = self._read()
+        data["guests"] = [g["label"] for g in self.guests if g["label"] != HOST]
+        self._write(data)
+        return label
+
+    def who(self, seg, call_active):
+        """Label for one speech region: the host, an existing guest, a new guest, None (call echo) or "?" (too short)."""
+        dur = len(seg) / RATE
+        if dur < self.MIN_SEC:
+            return "?"
+        e = embed(seg)
+        cands = []
+        if self.host is not None:
+            cands.append((float(e @ self.host), HOST))
+        for g in self.guests:
+            c = g["vec"] / (np.linalg.norm(g["vec"]) or 1)
+            cands.append((float(e @ c), g["label"]))
+        host_sim = cands[0][0] if (cands and self.host is not None) else -1.0
+        guests = [c for c in cands if c[1] != HOST or self.host is None]
+        g_best, g_label = max(guests) if guests else (-1.0, None)
+        log(f"voice {dur:.1f}s host={host_sim:.2f} guest={g_label}:{g_best:.2f}")
+        if self.host is not None and host_sim >= self.HOST_MIN and host_sim >= g_best + 0.03:
+            chosen = HOST
+        elif g_label and g_best >= self.SAME_MIN and g_best >= host_sim:
+            chosen = g_label
+            g = next(g for g in self.guests if g["label"] == g_label)
+            if g["n"] < 30:
+                g["vec"] += e; g["n"] += 1
+        elif call_active:
+            return None  # likely the call echoing through the speakers, not someone in the room
+        elif self.host is not None and host_sim >= self.HOST_MIN - 0.08:
+            chosen = self.last or HOST  # too close to call: keep the previous speaker
+        else:
+            chosen = self._new_guest(e)
+        self.last = chosen
+        return chosen
+
+    def heard(self, label, text):
+        """Name round: "Hi, I'm Dana" names that voice (unless the user already named it)."""
+        if label == HOST:
+            return
+        m = INTRO.search(text)
+        if m and m.group(1) not in NOT_NAMES:
+            data = self._read()
+            if label not in data.get("names", {}):
+                data.setdefault("names", {})[label] = m.group(1)
+                self._write(data)
+                relabel_transcript(label, m.group(1))
+
+
+def relabel_transcript(old, new):
+    """Replace a speaker label on earlier transcript lines (e.g. 'Guest 1' -> 'Dana')."""
+    try:
+        with open(OUT, encoding="utf-8") as f:
+            text = f.read()
+        text = re.sub(r"^(\[\d\d:\d\d:\d\d\] )" + re.escape(old) + ": ", lambda m: m.group(1) + new + ": ", text, flags=re.M)
+        with open(OUT, "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError:
+        pass
+
+
+def split_turns(a, min_pause=0.3):
+    """Split a chunk into speech regions at pauses (energy-based). Returns [(start, end)] in samples."""
+    frame = int(RATE * 0.03)
+    n = len(a) // frame
+    if n == 0:
+        return []
+    rms = np.sqrt(np.mean(a[: n * frame].reshape(n, frame) ** 2, axis=1))
+    thr = max(np.percentile(rms, 20) * 2.5, float(np.max(rms)) * 0.04, 0.002)
+    speech = rms > thr
+    regions, start, quiet = [], None, 0
+    for i, sp in enumerate(speech):
+        if sp:
+            if start is None:
+                start = i
+            quiet = 0
+        elif start is not None:
+            quiet += 1
+            if quiet * 0.03 >= min_pause:
+                regions.append((start, i - quiet + 1)); start, quiet = None, 0
+    if start is not None:
+        regions.append((start, n))
+    pad = int(0.1 / 0.03)
+    out = [(max(0, s - pad) * frame, min(n, e + pad) * frame) for s, e in regions if (e - s) * 0.03 >= 0.3]
+    return out
+
+
+def transcribe_span(a, s, e):
+    """Transcribe one slice of a chunk; returns the joined text."""
+    fd, tmp = tempfile.mkstemp(suffix=".wav", dir=CHUNKS, prefix="turn_")
+    os.close(fd)
+    try:
+        with wave.open(tmp, "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE)
+            w.writeframes((np.clip(a[s:e], -1, 1) * 32767).astype(np.int16).tobytes())
+        return " ".join(t for _, _, t in whisper(tmp)).strip()
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
 class Session:
     def __init__(self, name, chunk):
         self.name, self.chunk = name, chunk
@@ -305,6 +448,7 @@ class Session:
             with open(VOICE, encoding="utf-8") as f:
                 self.host = np.array(json.load(f)["embedding"], dtype=np.float32)
         self.last_mic_label = HOST if self.host is None else None
+        self.book = SpeakerBook(self.host)
         self.capture = (WinCapture if IS_WIN else MacCapture)(chunk)
         self.stopping = False
 
@@ -372,11 +516,10 @@ class Session:
             lvl = peak_db(a)
             self.write_level("mic", lvl)
             if lvl > SILENT_DB:
-                for s, e, text in whisper(path):
-                    at = self.t0(f) + dt.timedelta(seconds=s)
-                    label = self.label_mic(a, s, e, text, at, call_text)
-                    if label:
-                        lines.append((at, label, text))
+                level(path)
+                a = read_wav(path)
+                for at, label, text in self.mic_turns(a, self.t0(f), call_text):
+                    lines.append((at, label, text))
             os.remove(path)
         lines.sort(key=lambda x: x[0])
         if lines:
@@ -384,18 +527,38 @@ class Session:
                 for at, who, text in lines:
                     fh.write(f"[{at:%H:%M:%S}] {who}: {text}\n")
 
+    def mic_turns(self, a, t0, call_text):
+        regions = split_turns(a) or [(0, len(a))]
+        labelled = []
+        for s0, e0 in regions:
+            label = self.book.who(a[s0:e0], bool(call_text))
+            if labelled and (label == "?" or label == labelled[-1][2]):
+                labelled[-1] = (labelled[-1][0], e0, labelled[-1][2])  # same speaker (or too short to tell): extend
+            elif label != "?":
+                labelled.append((s0, e0, label))
+            else:
+                labelled.append((s0, e0, self.book.last or HOST))
+        out = []
+        for s0, e0, label in labelled:
+            if label is None:
+                continue  # echo of the call through the speakers
+            text = transcribe_span(a, s0, e0)
+            if len(text) < 2 or HALLUCINATIONS.match(text):
+                continue
+            at = t0 + dt.timedelta(seconds=s0 / RATE)
+            if any(abs((ct_at - at).total_seconds()) < self.chunk and similar(text, ct) > 0.5 for ct_at, ct in call_text):
+                continue
+            self.book.heard(label, text)
+            out.append((at, self.book.display(label), text))
+        return out
+
     def label_mic(self, a, s, e, text, at, call_text):
         for ct_at, ct in call_text:  # the call echoing through the speakers into the mic
             if abs((ct_at - at).total_seconds()) < self.chunk and similar(text, ct) > 0.5:
                 return None
-        if self.host is None:
-            return HOST
         seg = a[int(s * RATE):int(e * RATE)]
-        if len(seg) >= RATE:
-            sim = float(embed(seg) @ self.host)
-            self.last_mic_label = HOST if sim >= MATCH else ("Echo" if call_text else "Guest")
-        label = self.last_mic_label or "Guest"
-        return None if label == "Echo" else label
+        label = self.book.assign(seg, text, bool(call_text))
+        return self.book.display(label) if label else None
 
     def write_level(self, which, db):
         path = os.path.join(LIVE, "level.json")

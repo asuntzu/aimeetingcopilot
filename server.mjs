@@ -92,6 +92,7 @@ function status() {
     voiceProfile: fs.existsSync(VOICEFILE),
     error: !listening && /stopped unexpectedly|ERROR/.test(log) ? log.trim().split("\n").slice(-3).join(" ") : null,
     lineCount: parseTranscript(read(TRANSCRIPT)).length,
+    speakers: JSON.parse(read(path.join(LIVE, "speakers.json"), '{"names":{},"guests":[]}')),
     hostName: HOST_NAME,
     platform: IS_WIN ? "windows" : "mac",
   };
@@ -575,6 +576,25 @@ const tools = {
       if (actionItems) out.actionItems = saveOutput("Action items", JSON.stringify(actionItems, null, 2).slice(0, 1_000_000), { ext: ".json" });
       logAction("Meeting wrapped up: summary, live notes and action items saved");
       return out;
+    },
+  },
+  rename_speaker: {
+    description: "Name a voice in the current meeting (e.g. 'Guest 1' -> 'Dana'). Earlier transcript lines are updated too.",
+    schema: { type: "object", properties: { label: { type: "string" }, name: { type: "string" } }, required: ["label", "name"] },
+    run: ({ label, name }) => {
+      const from = String(label || "");
+      if (!/^Guest \d{1,2}$/.test(from)) throw new Error("Only Guest speakers can be renamed.");
+      const to = String(name || "").replace(/[^\p{L}\p{M} .'-]/gu, "").replace(/\s+/g, " ").replace(/^[ .'-]+|[ .'-]+$/g, "").trim().slice(0, 40);
+      if (!to) throw new Error("Type a name.");
+      const f = path.join(LIVE, "speakers.json");
+      const data = JSON.parse(read(f, '{"names":{},"guests":[]}'));
+      const shown = (data.names || {})[from] || from;
+      data.names = { ...(data.names || {}), [from]: to };
+      fs.writeFileSync(f, JSON.stringify(data));
+      const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const t = read(TRANSCRIPT);
+      if (t) fs.writeFileSync(TRANSCRIPT, t.replace(new RegExp(`^(\\[\\d\\d:\\d\\d:\\d\\d\\] )${esc(shown)}: `, "gm"), `$1${to}: `));
+      return data;
     },
   },
   // ---------- Action items ----------

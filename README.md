@@ -2,7 +2,7 @@
 
 A private, on-device meeting assistant for the **Claude desktop app**. It listens to your in-person meetings and your Zoom / Google Meet calls, transcribes them on your own computer, and gives you live help while you talk:
 
-- **Live transcript with speaker labels**: your lines carry your name, the other people on a video call are labeled **Call**, and other people in the room are labeled **Guest**.
+- **Live transcript with speaker labels**: your lines carry your name (recognized by your voice), the other people on a video call are labeled **Call**, and each other person in the room gets their own label (**Guest 1**, **Guest 2**…). Labels switch to real names when people introduce themselves ("Hi, I'm Dana") or when you click a speaker and type a name.
 - **Say next**: the single most useful thing to say or ask right now.
 - **Context from your documents**: choose a folder of background material (PDF, Word, notes) and the copilot briefs you on what those documents say about the topic being discussed, with the source file for each point.
 - **Questions to raise, action items, decisions and notes**, updated as the conversation moves.
